@@ -1,5 +1,6 @@
 import { BDKClient } from "./core/BDKClient.js";
 import { TrendContinuation } from "./playbooks/TrendContinuation.js";
+import { OpeningRangeEngine } from "./engines/OpeningRangeEngine.js";
 
 async function main() {
 
@@ -18,6 +19,10 @@ async function main() {
 
     console.log(`✓ Downloaded ${candles.length} candles`);
     console.log("");
+
+    //----------------------------------
+    // Trend Continuation
+    //----------------------------------
 
     const playbook = new TrendContinuation();
 
@@ -40,17 +45,16 @@ async function main() {
 
     if (result.risk.valid) {
 
-    console.log(`Entry         : ${result.risk.entry.toFixed(2)}`);
-    console.log(`Stop          : ${result.risk.stop.toFixed(2)}`);
-    console.log(`Target        : ${result.risk.target.toFixed(2)}`);
-    console.log(`R/R           : ${result.risk.riskReward.toFixed(2)}`);
+        console.log(`Entry         : ${result.risk.entry.toFixed(2)}`);
+        console.log(`Stop          : ${result.risk.stop.toFixed(2)}`);
+        console.log(`Target        : ${result.risk.target.toFixed(2)}`);
+        console.log(`R/R           : ${result.risk.riskReward.toFixed(2)}`);
+
+    } else {
+
+        console.log("No valid trade.");
 
     }
-    else {
-
-    console.log("No valid trade.");
-
-}
 
     console.log("");
     console.log("------------------------------------");
@@ -63,12 +67,35 @@ async function main() {
     console.log(`EMA 20        : ${result.trend.ema20.toFixed(2)}`);
     console.log(`EMA 50        : ${result.trend.ema50.toFixed(2)}`);
 
+    //----------------------------------
+    // Opening Range Breakout
+    //----------------------------------
+
+    const orb =
+        new OpeningRangeEngine()
+            .evaluate(candles);
+
+    console.log("");
+    console.log("------------------------------------");
+    console.log("Opening Range Breakout");
+    console.log("------------------------------------");
+
+    console.log(`Direction     : ${orb.direction}`);
+    console.log(`OR High       : ${orb.high.toFixed(2)}`);
+    console.log(`OR Low        : ${orb.low.toFixed(2)}`);
+
+    if (orb.breakoutIndex >= 0) {
+
+        console.log(`Breakout Bar  : ${orb.breakoutIndex}`);
+
+    } else {
+
+        console.log("Breakout Bar  : None");
+
+    }
+
     console.log("");
 
-    console.log(
-    candles[0].datetime,
-    new Date(candles[0].datetime)
-);
 }
 
 main().catch((error) => {
