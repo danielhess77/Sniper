@@ -1,11 +1,15 @@
 /**
- * RiskEngine v1.1
+ * RiskEngine v2.0
  *
  * Calculates:
  * - Entry
  * - Stop
  * - Target
  * - Risk / Reward
+ *
+ * Stops and targets are derived from
+ * recent market structure instead of
+ * a fixed 2R projection.
  */
 
 import { Candle } from "../core/BDKClient.js";
@@ -39,10 +43,12 @@ export class RiskEngine {
         //--------------------------------------------------
 
         if (
-            candles.length === 0 ||
+
+            candles.length < 20 ||
             trend.direction === "NONE" ||
             !confirmation.confirmed ||
             confirmation.candleIndex < 0
+
         ) {
 
             return {
@@ -61,18 +67,26 @@ export class RiskEngine {
 
         }
 
-        //--------------------------------------------------
-        // Confirmation Candle
-        //--------------------------------------------------
-
         const signal = candles[confirmation.candleIndex];
 
         const entry = signal.close;
 
+        //--------------------------------------------------
+        // Recent Structure
+        //--------------------------------------------------
+
+        const stopWindow = candles.slice(
+            Math.max(0, confirmation.candleIndex - 4),
+            confirmation.candleIndex + 1
+        );
+
+        const targetWindow = candles.slice(
+            Math.max(0, confirmation.candleIndex - 19),
+            confirmation.candleIndex + 1
+        );
+
         let stop = 0;
-
         let target = 0;
-
         let riskReward = 0;
 
         //--------------------------------------------------
@@ -81,11 +95,25 @@ export class RiskEngine {
 
         if (trend.direction === "BULLISH") {
 
-            stop = signal.low;
+            const recentLow =
+                Math.min(...stopWindow.map(c => c.low));
+
+            stop = Math.min(signal.low, recentLow);
+
+            const recentHigh =
+                Math.max(...targetWindow.map(c => c.high));
+
+            target = recentHigh;
 
             const risk = entry - stop;
+            const reward = target - entry;
 
-            if (risk <= 0) {
+            if (
+
+                risk <= 0 ||
+                reward <= 0
+
+            ) {
 
                 return {
 
@@ -95,7 +123,7 @@ export class RiskEngine {
 
                     stop,
 
-                    target: 0,
+                    target,
 
                     riskReward: 0
 
@@ -103,9 +131,7 @@ export class RiskEngine {
 
             }
 
-            target = entry + (risk * 2);
-
-            riskReward = (target - entry) / risk;
+            riskReward = reward / risk;
 
         }
 
@@ -115,11 +141,25 @@ export class RiskEngine {
 
         else {
 
-            stop = signal.high;
+            const recentHigh =
+                Math.max(...stopWindow.map(c => c.high));
+
+            stop = Math.max(signal.high, recentHigh);
+
+            const recentLow =
+                Math.min(...targetWindow.map(c => c.low));
+
+            target = recentLow;
 
             const risk = stop - entry;
+            const reward = entry - target;
 
-            if (risk <= 0) {
+            if (
+
+                risk <= 0 ||
+                reward <= 0
+
+            ) {
 
                 return {
 
@@ -129,7 +169,7 @@ export class RiskEngine {
 
                     stop,
 
-                    target: 0,
+                    target,
 
                     riskReward: 0
 
@@ -137,14 +177,12 @@ export class RiskEngine {
 
             }
 
-            target = entry - (risk * 2);
-
-            riskReward = (entry - target) / risk;
+            riskReward = reward / risk;
 
         }
 
         //--------------------------------------------------
-        // Result
+        // Final Result
         //--------------------------------------------------
 
         return {

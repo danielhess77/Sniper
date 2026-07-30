@@ -1,140 +1,162 @@
 /**
- * PullbackEngine v1.0
+ * PullbackEngine v2.0
  *
- * Purpose:
- * Detect a valid trend continuation pullback.
- *
- * Returns:
- *   EMA9
- *   EMA20
- *   NONE
+ * Evaluates the quality of a pullback
+ * during an established trend.
  */
 
+import { Candle } from "../core/BDKClient.js";
 import { TrendResult } from "../core/TrendQualification.js";
 
-export type PullbackLevel =
-    | "EMA9"
-    | "EMA20"
-    | "NONE";
-
 export interface PullbackResult {
-    level: PullbackLevel;
+
+    level:
+        | "EMA9"
+        | "EMA20"
+        | "NONE";
+
 }
 
 export class PullbackEngine {
 
     evaluate(
-        candles: any[],
+        candles: Candle[],
         trend: TrendResult
     ): PullbackResult {
 
-        if (trend.direction === "NONE") {
-            return { level: "NONE" };
+        if (
+            candles.length < 10 ||
+            trend.direction === "NONE"
+        ) {
+
+            return {
+                level: "NONE"
+            };
+
         }
 
-        if (candles.length < 20) {
-            return { level: "NONE" };
-        }
+        const last = candles[candles.length - 1];
 
         //--------------------------------------------------
-        // Recent price action
+        // Recent Momentum
         //--------------------------------------------------
 
-        const recent = candles.slice(-20);
+        const recent = candles.slice(-6);
 
-        const highs = recent.map(c => c.high);
-        const lows = recent.map(c => c.low);
+        const highestHigh =
+            Math.max(...recent.map(c => c.high));
 
-        const highestHigh = Math.max(...highs);
-        const lowestLow = Math.min(...lows);
-
-        const last = recent[recent.length - 1];
+        const lowestLow =
+            Math.min(...recent.map(c => c.low));
 
         //--------------------------------------------------
-        // Bullish Trend
+        // Bullish
         //--------------------------------------------------
 
         if (trend.direction === "BULLISH") {
 
-            // Was there an impulse?
+            // Must have recently expanded higher
+
             if (highestHigh <= trend.ema9) {
-                return { level: "NONE" };
+
+                return {
+                    level: "NONE"
+                };
+
             }
 
-            // Trend broken
+            // Reject overextended pullbacks
+
             if (last.close < trend.ema20) {
-                return { level: "NONE" };
+
+                return {
+                    level: "NONE"
+                };
+
             }
 
-            // Pullback to EMA9
+            // Preferred: touch 9 EMA
+
             if (
                 last.low <= trend.ema9 &&
                 last.close >= trend.ema9
             ) {
+
                 return {
                     level: "EMA9"
                 };
+
             }
 
-            // Pullback to EMA20
+            // Secondary: touch 20 EMA
+
             if (
                 last.low <= trend.ema20 &&
                 last.close >= trend.ema20
             ) {
+
                 return {
                     level: "EMA20"
                 };
+
             }
 
-            return {
-                level: "NONE"
-            };
         }
 
         //--------------------------------------------------
-        // Bearish Trend
+        // Bearish
         //--------------------------------------------------
 
         if (trend.direction === "BEARISH") {
 
-            // Was there an impulse?
             if (lowestLow >= trend.ema9) {
-                return { level: "NONE" };
+
+                return {
+                    level: "NONE"
+                };
+
             }
 
-            // Trend broken
             if (last.close > trend.ema20) {
-                return { level: "NONE" };
+
+                return {
+                    level: "NONE"
+                };
+
             }
 
-            // Pullback to EMA9
             if (
                 last.high >= trend.ema9 &&
                 last.close <= trend.ema9
             ) {
+
                 return {
                     level: "EMA9"
                 };
+
             }
 
-            // Pullback to EMA20
             if (
                 last.high >= trend.ema20 &&
                 last.close <= trend.ema20
             ) {
+
                 return {
                     level: "EMA20"
                 };
+
             }
 
-            return {
-                level: "NONE"
-            };
         }
 
+        //--------------------------------------------------
+
         return {
+
             level: "NONE"
+
         };
+
     }
 
 }
