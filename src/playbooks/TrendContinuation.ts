@@ -2,7 +2,7 @@
  * Sniper
  * Trend Continuation Playbook
  *
- * Version: 0.6
+ * Version: 0.7
  */
 
 import { Candle } from "../core/BDKClient.js";
@@ -10,8 +10,26 @@ import { TrendQualification } from "../core/TrendQualification.js";
 import { PullbackEngine } from "../engines/PullbackEngine.js";
 import { ConfirmationEngine } from "../engines/ConfirmationEngine.js";
 import { RiskEngine } from "../engines/RiskEngine.js";
+import { Playbook } from "./Playbook.js";
 
-export class TrendContinuation {
+export interface TrendContinuationResult {
+
+    playbook: string;
+
+    qualified: boolean;
+
+    trend: ReturnType<TrendQualification["evaluate"]>;
+
+    pullback: ReturnType<PullbackEngine["evaluate"]>;
+
+    confirmation: ReturnType<ConfirmationEngine["evaluate"]>;
+
+    risk: ReturnType<RiskEngine["evaluate"]>;
+
+}
+
+export class TrendContinuation
+    implements Playbook<TrendContinuationResult> {
 
     private trend = new TrendQualification();
 
@@ -21,7 +39,9 @@ export class TrendContinuation {
 
     private risk = new RiskEngine();
 
-    evaluate(candles: Candle[]) {
+    evaluate(
+        candles: Candle[]
+    ): TrendContinuationResult {
 
         const trend = this.trend.evaluate(candles);
 
@@ -30,9 +50,8 @@ export class TrendContinuation {
             trend
         );
 
-        const confirmation = this.confirmation.evaluate(
-            candles
-        );
+        const confirmation =
+            this.confirmation.evaluate(candles);
 
         let risk = {
 
