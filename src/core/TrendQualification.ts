@@ -2,24 +2,48 @@
  * Sniper
  * Trend Qualification Engine
  *
- * Version: 0.2
+ * Version: 0.3
  *
  * Trend + EMA + VWAP
  */
 
-import { Candle } from "./BDKClient";
+import { Candle } from "./BDKClient.js";
 
 export type TrendDirection =
   | "BULLISH"
   | "BEARISH"
   | "NONE";
 
+export interface TrendChecks {
+
+  // Bullish
+  priceAboveVWAP: boolean;
+  priceAboveEMA9: boolean;
+  ema9AboveEMA20: boolean;
+  ema20AboveEMA50: boolean;
+
+  // Bearish
+  priceBelowVWAP: boolean;
+  priceBelowEMA9: boolean;
+  ema9BelowEMA20: boolean;
+  ema20BelowEMA50: boolean;
+
+}
+
 export interface TrendResult {
+
   direction: TrendDirection;
+
+  currentPrice: number;
+
   ema9: number;
   ema20: number;
   ema50: number;
+
   vwap: number;
+
+  checks: TrendChecks;
+
 }
 
 export class TrendQualification {
@@ -38,34 +62,57 @@ export class TrendQualification {
 
     const vwap = this.calculateVWAP(candles);
 
-    const lastPrice = closes[closes.length - 1];
+    const currentPrice = closes[closes.length - 1];
+
+    const checks: TrendChecks = {
+
+      // Bullish
+      priceAboveVWAP: currentPrice > vwap,
+      priceAboveEMA9: currentPrice > ema9,
+      ema9AboveEMA20: ema9 > ema20,
+      ema20AboveEMA50: ema20 > ema50,
+
+      // Bearish
+      priceBelowVWAP: currentPrice < vwap,
+      priceBelowEMA9: currentPrice < ema9,
+      ema9BelowEMA20: ema9 < ema20,
+      ema20BelowEMA50: ema20 < ema50
+
+    };
 
     let direction: TrendDirection = "NONE";
 
     if (
-      lastPrice > vwap &&
-      lastPrice > ema9 &&
-      ema9 > ema20 &&
-      ema20 > ema50
+      checks.priceAboveVWAP &&
+      checks.priceAboveEMA9 &&
+      checks.ema9AboveEMA20 &&
+      checks.ema20AboveEMA50
     ) {
       direction = "BULLISH";
     }
-
-    if (
-      lastPrice < vwap &&
-      lastPrice < ema9 &&
-      ema9 < ema20 &&
-      ema20 < ema50
+    else if (
+      checks.priceBelowVWAP &&
+      checks.priceBelowEMA9 &&
+      checks.ema9BelowEMA20 &&
+      checks.ema20BelowEMA50
     ) {
       direction = "BEARISH";
     }
 
     return {
+
       direction,
+
+      currentPrice,
+
       ema9,
       ema20,
       ema50,
-      vwap
+
+      vwap,
+
+      checks
+
     };
 
   }
