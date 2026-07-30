@@ -64,6 +64,11 @@ async function main() {
     console.log(`EMA 50        : ${result.trend.ema50.toFixed(2)}`);
 
     console.log("");
+
+    console.log(
+    candles[0].datetime,
+    new Date(candles[0].datetime)
+);
 }
 
 main().catch((error) => {
