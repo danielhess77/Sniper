@@ -1,16 +1,14 @@
 /**
  * Opening Range Breakout Engine
  *
- * Version: 1.0
+ * Version: 1.1
  *
  * Determines whether price has broken
  * the opening range.
  */
 
 import { Candle } from "../core/BDKClient.js";
-import {
-    MarketSession
-} from "../utils/MarketSession.js";
+import { MarketSession } from "../utils/MarketSession.js";
 
 export interface OpeningRangeResult {
 
@@ -25,6 +23,10 @@ export interface OpeningRangeResult {
 
     breakoutIndex: number;
 
+    breakoutPrice: number;
+
+    breakoutCandle: Candle | null;
+
 }
 
 export class OpeningRangeEngine {
@@ -36,9 +38,7 @@ export class OpeningRangeEngine {
         const openingRange =
             MarketSession.getOpeningRange(candles);
 
-        if (
-            openingRange.candles.length === 0
-        ) {
+        if (openingRange.candles.length === 0) {
 
             return {
 
@@ -48,7 +48,11 @@ export class OpeningRangeEngine {
 
                 low: 0,
 
-                breakoutIndex: -1
+                breakoutIndex: -1,
+
+                breakoutPrice: 0,
+
+                breakoutCandle: null
 
             };
 
@@ -64,8 +68,7 @@ export class OpeningRangeEngine {
 
         } = openingRange;
 
-        const startIndex =
-            rangeCandles.length;
+        const startIndex = rangeCandles.length;
 
         for (
             let i = startIndex;
@@ -85,7 +88,11 @@ export class OpeningRangeEngine {
 
                     low,
 
-                    breakoutIndex: i
+                    breakoutIndex: i,
+
+                    breakoutPrice: candle.close,
+
+                    breakoutCandle: candle
 
                 };
 
@@ -101,7 +108,11 @@ export class OpeningRangeEngine {
 
                     low,
 
-                    breakoutIndex: i
+                    breakoutIndex: i,
+
+                    breakoutPrice: candle.close,
+
+                    breakoutCandle: candle
 
                 };
 
@@ -117,7 +128,11 @@ export class OpeningRangeEngine {
 
             low,
 
-            breakoutIndex: -1
+            breakoutIndex: -1,
+
+            breakoutPrice: 0,
+
+            breakoutCandle: null
 
         };
 
