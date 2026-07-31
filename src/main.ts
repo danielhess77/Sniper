@@ -21,7 +21,15 @@ async function runScan(scanner: Scanner) {
     console.log("            SNIPER v0.5");
     console.log("========================================");
     console.log("");
-    console.log(`Scan Time : ${new Date().toLocaleTimeString()}`);
+    const scanTime = new Date().toLocaleTimeString("en-US", {
+    timeZone: "America/New_York",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true
+});
+
+console.log(`Scan Time : ${scanTime} ET`);
     console.log("");
 
     console.log(`Scanning ${WATCHLIST.length} symbol(s)...`);
