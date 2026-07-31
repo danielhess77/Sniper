@@ -11,6 +11,7 @@ import { PullbackEngine } from "../engines/PullbackEngine.js";
 import { ConfirmationEngine } from "../engines/ConfirmationEngine.js";
 import { RiskEngine } from "../engines/RiskEngine.js";
 import { Playbook } from "./Playbook.js";
+import { ScoreEngine } from "../engines/ScoreEngine.js";
 
 export interface TrendContinuationResult {
 
@@ -38,6 +39,8 @@ export class TrendContinuation
     private confirmation = new ConfirmationEngine();
 
     private risk = new RiskEngine();
+
+    private score = new ScoreEngine();
 
     evaluate(
         candles: Candle[]
@@ -82,6 +85,23 @@ export class TrendContinuation
             );
 
         }
+
+        const score = this.score.evaluate({
+
+    trend: 30,
+
+    playbook: 25,
+
+    confirmation: 20,
+
+    risk:
+        risk.riskReward >= 3
+            ? 15
+            : 10,
+
+    entry: 10
+
+});
 
         return {
 

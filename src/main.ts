@@ -1,26 +1,39 @@
 import { BDKClient } from "./core/BDKClient.js";
 import { Scanner } from "./core/Scanner.js";
 import { WATCHLIST } from "./config/Watchlist.js";
+
 import { TrendContinuation } from "./playbooks/TrendContinuation.js";
 import { OpeningRangeBreakout } from "./playbooks/OpeningRangeBreakout.js";
+import { VWAPReclaim } from "./playbooks/VWAPReclaim.js";
+import { FirstPullback } from "./playbooks/FirstPullback.js";
 
 async function main() {
 
     console.clear();
 
     console.log("====================================");
-    console.log("          SNIPER v0.4");
+    console.log("          SNIPER v0.5");
     console.log("====================================");
     console.log("");
 
     const bdk = new BDKClient();
 
     const scanner = new Scanner(
+
         bdk,
+
         [
+
             new TrendContinuation(),
-            new OpeningRangeBreakout()
+
+            new OpeningRangeBreakout(),
+
+            new VWAPReclaim(),
+
+            new FirstPullback()
+
         ]
+
     );
 
     console.log(
@@ -66,14 +79,27 @@ async function main() {
     for (const scan of qualifiedResults) {
 
         console.log("====================================");
-
-        console.log(
-            `${scan.symbol} • ${scan.playbook}`
-        );
-
+        console.log(`${scan.symbol} • ${scan.playbook}`);
         console.log("====================================");
 
         console.log("Qualified : YES");
+
+        console.log(
+            `Entry  : ${scan.result.risk.entry.toFixed(2)}`
+        );
+
+        console.log(
+            `Stop   : ${scan.result.risk.stop.toFixed(2)}`
+        );
+
+        console.log(
+            `Target : ${scan.result.risk.target.toFixed(2)}`
+        );
+
+        console.log(
+            `R/R    : ${scan.result.risk.riskReward.toFixed(2)}`
+        );
+
         console.log("");
 
     }

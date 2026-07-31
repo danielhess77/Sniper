@@ -2,7 +2,7 @@
  * Sniper
  * Scanner
  *
- * Version: 1.2
+ * Version: 1.3
  */
 
 import { BDKClient } from "./BDKClient.js";
@@ -16,7 +16,7 @@ export interface ScanResult {
 
     qualified: boolean;
 
-    result: unknown;
+    result: any;
 
 }
 
@@ -26,7 +26,7 @@ export class Scanner {
 
         private bdk: BDKClient,
 
-        private playbooks: Playbook<unknown>[]
+        private playbooks: Playbook<any>[]
 
     ) {}
 
@@ -53,7 +53,7 @@ export class Scanner {
             for (const playbook of this.playbooks) {
 
                 const result =
-                    playbook.evaluate(history.candles) as any;
+                    playbook.evaluate(history.candles);
 
                 results.push({
 

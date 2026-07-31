@@ -1,6 +1,6 @@
 /**
  * Sniper
- * VWAP Reclaim Playbook
+ * First Pullback Playbook
  *
  * Version: 1.0
  */
@@ -14,8 +14,8 @@ import {
 } from "../core/TrendQualification.js";
 
 import {
-    VWAPReclaimEngine
-} from "../engines/VWAPReclaimEngine.js";
+    PullbackEngine
+} from "../engines/PullbackEngine.js";
 
 import {
     ConfirmationEngine
@@ -28,8 +28,8 @@ import {
 type TrendResult =
     ReturnType<TrendQualification["evaluate"]>;
 
-type ReclaimResult =
-    ReturnType<VWAPReclaimEngine["evaluate"]>;
+type PullbackResult =
+    ReturnType<PullbackEngine["evaluate"]>;
 
 type ConfirmationResult =
     ReturnType<ConfirmationEngine["evaluate"]>;
@@ -37,7 +37,7 @@ type ConfirmationResult =
 type RiskResult =
     ReturnType<RiskEngine["evaluate"]>;
 
-export interface VWAPReclaimResult {
+export interface FirstPullbackResult {
 
     playbook: string;
 
@@ -45,7 +45,7 @@ export interface VWAPReclaimResult {
 
     trend: TrendResult;
 
-    reclaim: ReclaimResult;
+    pullback: PullbackResult;
 
     confirmation: ConfirmationResult;
 
@@ -53,14 +53,14 @@ export interface VWAPReclaimResult {
 
 }
 
-export class VWAPReclaim
-implements Playbook<VWAPReclaimResult> {
+export class FirstPullback
+implements Playbook<FirstPullbackResult> {
 
     private trend =
         new TrendQualification();
 
-    private reclaim =
-        new VWAPReclaimEngine();
+    private pullback =
+        new PullbackEngine();
 
     private confirmation =
         new ConfirmationEngine();
@@ -72,20 +72,24 @@ implements Playbook<VWAPReclaimResult> {
 
     evaluate(
         candles: Candle[]
-    ): VWAPReclaimResult {
+    ): FirstPullbackResult {
 
         const trend =
             this.trend.evaluate(candles);
 
-        const reclaim =
-            this.reclaim.evaluate(
-                candles,
-                trend.vwap,
-                trend.direction
-            );
+        const pullback =
+            this.pullback.evaluate(
+
+            candles,
+
+            trend
+
+    );
 
         const confirmation =
-            this.confirmation.evaluate(candles);
+            this.confirmation.evaluate(
+                candles
+            );
 
         const defaultRisk: RiskResult = {
 
@@ -105,7 +109,7 @@ implements Playbook<VWAPReclaimResult> {
 
             trend.direction === "NONE" ||
 
-            !reclaim.reclaimed ||
+            pullback.level === "NONE" ||
 
             !confirmation.confirmed
 
@@ -113,13 +117,14 @@ implements Playbook<VWAPReclaimResult> {
 
             return {
 
-                playbook: "VWAP Reclaim",
+                playbook:
+                    "First Pullback",
 
                 qualified: false,
 
                 trend,
 
-                reclaim,
+                pullback,
 
                 confirmation,
 
@@ -140,38 +145,43 @@ implements Playbook<VWAPReclaimResult> {
 
             );
 
-        const score = this.score.evaluate({
-
-        trend: 28,
-
-        playbook: 24,
-
-        confirmation: 20,
-
-        risk:
-        risk.riskReward >= 3
-            ? 15
-            : 10,
-
-        entry: 10
-
-});
-
         return {
 
-            playbook: "VWAP Reclaim",
+            playbook:
+                "First Pullback",
 
-            qualified: risk.valid,
+            qualified:
+                risk.valid,
 
             trend,
 
-            reclaim,
+            pullback,
 
             confirmation,
 
             risk
 
         };
+
+        const score = this.score.evaluate({
+
+        trend: 30,
+
+        playbook:
+        pullback.level === "EMA9"
+            ? 25
+            : 20,
+
+        confirmation: 18,
+
+        risk:
+        risk.riskReward >= 3
+            ? 15
+            : 10,
+
+    entry: 10
+
+});
 
     }
 

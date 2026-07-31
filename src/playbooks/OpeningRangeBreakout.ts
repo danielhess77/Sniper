@@ -2,16 +2,13 @@
  * Sniper
  * Opening Range Breakout Playbook
  *
- * Version: 1.2
+ * Version: 1.3
  */
 
 import { Candle } from "../core/BDKClient.js";
-import {
-    OpeningRangeEngine
-} from "../engines/OpeningRangeEngine.js";
-import {
-    ConfirmationEngine
-} from "../engines/ConfirmationEngine.js";
+import { OpeningRangeEngine } from "../engines/OpeningRangeEngine.js";
+import { ConfirmationEngine } from "../engines/ConfirmationEngine.js";
+import { ScoreEngine } from "../engines/ScoreEngine.js";
 import { Playbook } from "./Playbook.js";
 
 export interface OpeningRangeBreakoutResult {
@@ -40,6 +37,8 @@ export interface OpeningRangeBreakoutResult {
 
     };
 
+    score: number;
+
 }
 
 export class OpeningRangeBreakout
@@ -50,6 +49,9 @@ export class OpeningRangeBreakout
 
     private confirmation =
         new ConfirmationEngine();
+
+    private score =
+        new ScoreEngine();
 
     evaluate(
         candles: Candle[]
@@ -145,6 +147,26 @@ export class OpeningRangeBreakout
 
         }
 
+        const score = this.score.evaluate({
+
+            trend: 30,
+
+            playbook: 23,
+
+            confirmation: 20,
+
+            risk:
+                trade.riskReward >= 3
+                    ? 15
+                    : 10,
+
+            entry:
+                trade.valid
+                    ? 10
+                    : 0
+
+        });
+
         return {
 
             playbook:
@@ -157,7 +179,9 @@ export class OpeningRangeBreakout
 
             confirmation,
 
-            trade
+            trade,
+
+            score
 
         };
 

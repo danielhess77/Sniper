@@ -1,5 +1,5 @@
 /**
- * PullbackEngine v2.0
+ * PullbackEngine v2.1
  *
  * Evaluates the quality of a pullback
  * during an established trend.
@@ -15,6 +15,8 @@ export interface PullbackResult {
         | "EMA20"
         | "NONE";
 
+    pullbackCandle: Candle | null;
+
 }
 
 export class PullbackEngine {
@@ -25,23 +27,32 @@ export class PullbackEngine {
     ): PullbackResult {
 
         if (
+
             candles.length < 10 ||
+
             trend.direction === "NONE"
+
         ) {
 
             return {
-                level: "NONE"
+
+                level: "NONE",
+
+                pullbackCandle: null
+
             };
 
         }
 
-        const last = candles[candles.length - 1];
+        const last =
+            candles[candles.length - 1];
 
         //--------------------------------------------------
         // Recent Momentum
         //--------------------------------------------------
 
-        const recent = candles.slice(-6);
+        const recent =
+            candles.slice(-6);
 
         const highestHigh =
             Math.max(...recent.map(c => c.high));
@@ -60,43 +71,79 @@ export class PullbackEngine {
             if (highestHigh <= trend.ema9) {
 
                 return {
-                    level: "NONE"
+
+                    level: "NONE",
+
+                    pullbackCandle: null
+
                 };
 
             }
 
-            // Reject overextended pullbacks
+            // Pullback too deep
 
             if (last.close < trend.ema20) {
 
                 return {
-                    level: "NONE"
+
+                    level: "NONE",
+
+                    pullbackCandle: null
+
                 };
 
             }
 
-            // Preferred: touch 9 EMA
+            // Trend failure
+
+            if (last.close < trend.ema50) {
+
+                return {
+
+                    level: "NONE",
+
+                    pullbackCandle: null
+
+                };
+
+            }
+
+            // Preferred: EMA9
 
             if (
+
                 last.low <= trend.ema9 &&
+
                 last.close >= trend.ema9
+
             ) {
 
                 return {
-                    level: "EMA9"
+
+                    level: "EMA9",
+
+                    pullbackCandle: last
+
                 };
 
             }
 
-            // Secondary: touch 20 EMA
+            // Secondary: EMA20
 
             if (
+
                 last.low <= trend.ema20 &&
+
                 last.close >= trend.ema20
+
             ) {
 
                 return {
-                    level: "EMA20"
+
+                    level: "EMA20",
+
+                    pullbackCandle: last
+
                 };
 
             }
@@ -112,7 +159,11 @@ export class PullbackEngine {
             if (lowestLow >= trend.ema9) {
 
                 return {
-                    level: "NONE"
+
+                    level: "NONE",
+
+                    pullbackCandle: null
+
                 };
 
             }
@@ -120,29 +171,61 @@ export class PullbackEngine {
             if (last.close > trend.ema20) {
 
                 return {
-                    level: "NONE"
+
+                    level: "NONE",
+
+                    pullbackCandle: null
+
+                };
+
+            }
+
+            // Trend failure
+
+            if (last.close > trend.ema50) {
+
+                return {
+
+                    level: "NONE",
+
+                    pullbackCandle: null
+
                 };
 
             }
 
             if (
+
                 last.high >= trend.ema9 &&
+
                 last.close <= trend.ema9
+
             ) {
 
                 return {
-                    level: "EMA9"
+
+                    level: "EMA9",
+
+                    pullbackCandle: last
+
                 };
 
             }
 
             if (
+
                 last.high >= trend.ema20 &&
+
                 last.close <= trend.ema20
+
             ) {
 
                 return {
-                    level: "EMA20"
+
+                    level: "EMA20",
+
+                    pullbackCandle: last
+
                 };
 
             }
@@ -153,7 +236,9 @@ export class PullbackEngine {
 
         return {
 
-            level: "NONE"
+            level: "NONE",
+
+            pullbackCandle: null
 
         };
 
