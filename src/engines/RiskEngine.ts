@@ -1,5 +1,5 @@
 /**
- * RiskEngine v2.0
+ * RiskEngine v2.1
  *
  * Calculates:
  * - Entry
@@ -35,7 +35,8 @@ export class RiskEngine {
     evaluate(
         candles: Candle[],
         trend: TrendResult,
-        confirmation: ConfirmationResult
+        confirmation: ConfirmationResult,
+        entryOverride?: number
     ): RiskResult {
 
         //--------------------------------------------------
@@ -69,7 +70,8 @@ export class RiskEngine {
 
         const signal = candles[confirmation.candleIndex];
 
-        const entry = signal.close;
+        const entry =
+            entryOverride ?? signal.close;
 
         //--------------------------------------------------
         // Recent Structure

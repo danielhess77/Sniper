@@ -2,7 +2,7 @@
  * Sniper
  * Trend Qualification Engine
  *
- * Version: 0.3
+ * Version: 0.4
  *
  * Trend + EMA + VWAP
  */
@@ -36,6 +36,8 @@ export interface TrendResult {
 
   currentPrice: number;
 
+  latestCandle: Candle;
+
   ema9: number;
   ema20: number;
   ema50: number;
@@ -62,7 +64,9 @@ export class TrendQualification {
 
     const vwap = this.calculateVWAP(candles);
 
-    const currentPrice = closes[closes.length - 1];
+    const latestCandle = candles[candles.length - 1];
+
+    const currentPrice = latestCandle.close;
 
     const checks: TrendChecks = {
 
@@ -104,6 +108,8 @@ export class TrendQualification {
       direction,
 
       currentPrice,
+
+      latestCandle,
 
       ema9,
       ema20,
