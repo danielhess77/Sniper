@@ -1,8 +1,15 @@
 /**
- * ConfirmationEngine v1.1
+ * ConfirmationEngine v1.3
  *
- * Determines whether the most recent candles
- * provide a valid trend continuation trigger.
+ * Detects candlestick confirmation patterns.
+ *
+ * Strong reversal patterns (Engulfing, Morning Star,
+ * Evening Star, Hammer, Shooting Star) may confirm
+ * a trade.
+ *
+ * Informational patterns (Doji, Spinning Top) never
+ * confirm a trade by themselves, but may add
+ * confidence when combined with another playbook.
  */
 
 import { Candle } from "../core/BDKClient.js";
@@ -18,13 +25,23 @@ export type ConfirmationPattern =
     | "SPINNING_TOP"
     | "NONE";
 
+export type ConfirmationQuality =
+    | "HIGH"
+    | "MEDIUM"
+    | "INFO"
+    | "NONE";
+
 export interface ConfirmationResult {
 
     confirmed: boolean;
 
     pattern: ConfirmationPattern;
 
+    quality: ConfirmationQuality;
+
     candleIndex: number;
+
+    score: number;
 
 }
 
@@ -40,7 +57,11 @@ export class ConfirmationEngine {
 
                 pattern: "NONE",
 
-                candleIndex: -1
+                quality: "NONE",
+
+                candleIndex: -1,
+
+                score: 0
 
             };
 
@@ -71,7 +92,11 @@ export class ConfirmationEngine {
 
                 pattern: "BULLISH_ENGULFING",
 
-                candleIndex: lastIndex
+                quality: "HIGH",
+
+                candleIndex: lastIndex,
+
+                score: 20
 
             };
 
@@ -96,7 +121,11 @@ export class ConfirmationEngine {
 
                 pattern: "BEARISH_ENGULFING",
 
-                candleIndex: lastIndex
+                quality: "HIGH",
+
+                candleIndex: lastIndex,
+
+                score: 20
 
             };
 
@@ -135,7 +164,11 @@ export class ConfirmationEngine {
 
                 pattern: "HAMMER",
 
-                candleIndex: lastIndex
+                quality: "MEDIUM",
+
+                candleIndex: lastIndex,
+
+                score: 16
 
             };
 
@@ -159,7 +192,11 @@ export class ConfirmationEngine {
 
                 pattern: "SHOOTING_STAR",
 
-                candleIndex: lastIndex
+                quality: "MEDIUM",
+
+                candleIndex: lastIndex,
+
+                score: 16
 
             };
 
@@ -186,7 +223,11 @@ export class ConfirmationEngine {
 
                 pattern: "MORNING_STAR",
 
-                candleIndex: lastIndex
+                quality: "HIGH",
+
+                candleIndex: lastIndex,
+
+                score: 18
 
             };
 
@@ -201,9 +242,9 @@ export class ConfirmationEngine {
             c1.close > c1.open &&
             Math.abs(c2.close - c2.open) <
                 Math.abs(c1.close - c1.open) * 0.40 &&
-            c3.close < c3.open &&
             c3.close <
-                (c1.open + c1.close) / 2
+                (c1.open + c1.close) / 2 &&
+            c3.close < c3.open
 
         ) {
 
@@ -213,7 +254,11 @@ export class ConfirmationEngine {
 
                 pattern: "EVENING_STAR",
 
-                candleIndex: lastIndex
+                quality: "HIGH",
+
+                candleIndex: lastIndex,
+
+                score: 18
 
             };
 
@@ -236,7 +281,11 @@ export class ConfirmationEngine {
 
                 pattern: "DOJI",
 
-                candleIndex: lastIndex
+                quality: "INFO",
+
+                candleIndex: lastIndex,
+
+                score: 10
 
             };
 
@@ -261,7 +310,11 @@ export class ConfirmationEngine {
 
                 pattern: "SPINNING_TOP",
 
-                candleIndex: lastIndex
+                quality: "INFO",
+
+                candleIndex: lastIndex,
+
+                score: 8
 
             };
 
@@ -277,7 +330,11 @@ export class ConfirmationEngine {
 
             pattern: "NONE",
 
-            candleIndex: -1
+            quality: "NONE",
+
+            candleIndex: -1,
+
+            score: 0
 
         };
 

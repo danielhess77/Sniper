@@ -51,6 +51,8 @@ export interface FirstPullbackResult {
 
     risk: RiskResult;
 
+    score: number;
+
 }
 
 export class FirstPullback
@@ -115,26 +117,28 @@ implements Playbook<FirstPullbackResult> {
 
         ) {
 
-            return {
+        return {
 
-                playbook:
-                    "First Pullback",
+            playbook:
+            "First Pullback",
 
-                qualified: false,
+            qualified: false,
 
-                trend,
+            trend,
 
-                pullback,
+            pullback,
 
-                confirmation,
+            confirmation,
 
-                risk: defaultRisk
+            risk: defaultRisk,
 
-            };
+            score: 0
+
+};
 
         }
 
-        const risk =
+                const risk =
             this.risk.evaluate(
 
                 candles,
@@ -144,6 +148,34 @@ implements Playbook<FirstPullbackResult> {
                 confirmation
 
             );
+
+        const score =
+            this.score.evaluate({
+
+                trend: 30,
+
+                playbook:
+                    pullback.level === "EMA9"
+                        ? 25
+                        : 20,
+
+                confirmation:
+                    confirmation.score,
+
+                risk:
+                    this.score.evaluateRisk(
+                        risk.riskReward
+                    ),
+
+                entry:
+                    this.score.evaluateEntry(
+
+                        candles.length - 1 -
+                        confirmation.candleIndex
+
+                    )
+
+            });
 
         return {
 
@@ -159,29 +191,11 @@ implements Playbook<FirstPullbackResult> {
 
             confirmation,
 
-            risk
+            risk,
+
+            score
 
         };
-
-        const score = this.score.evaluate({
-
-        trend: 30,
-
-        playbook:
-        pullback.level === "EMA9"
-            ? 25
-            : 20,
-
-        confirmation: 18,
-
-        risk:
-        risk.riskReward >= 3
-            ? 15
-            : 10,
-
-    entry: 10
-
-});
 
     }
 

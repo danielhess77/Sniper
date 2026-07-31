@@ -27,6 +27,8 @@ export interface TrendContinuationResult {
 
     risk: ReturnType<RiskEngine["evaluate"]>;
 
+    score: number;
+
 }
 
 export class TrendContinuation
@@ -86,20 +88,23 @@ export class TrendContinuation
 
         }
 
-        const score = this.score.evaluate({
+      const score = this.score.evaluate({
 
-    trend: 30,
+        trend: 30,
 
-    playbook: 25,
+        playbook: 25,
 
-    confirmation: 20,
+        confirmation: confirmation.score,
 
-    risk:
-        risk.riskReward >= 3
-            ? 15
-            : 10,
+        risk: this.score.evaluateRisk(
+        risk.riskReward
+),
 
-    entry: 10
+        entry: this.score.evaluateEntry(
+
+        candles.length - 1 - confirmation.candleIndex
+
+),
 
 });
 
@@ -115,7 +120,9 @@ export class TrendContinuation
 
             confirmation,
 
-            risk
+            risk,
+
+            score
 
         };
 

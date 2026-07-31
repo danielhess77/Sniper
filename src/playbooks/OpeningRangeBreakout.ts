@@ -151,19 +151,17 @@ export class OpeningRangeBreakout
 
             trend: 30,
 
-            playbook: 23,
+            playbook: 25,
 
-            confirmation: 20,
+            confirmation: confirmation.score,
 
-            risk:
-                trade.riskReward >= 3
-                    ? 15
-                    : 10,
+            risk: this.score.evaluateRisk(
+                trade.riskReward
+            ),
 
-            entry:
-                trade.valid
-                    ? 10
-                    : 0
+            entry: this.score.evaluateEntry(
+                candles.length - 1 - confirmation.candleIndex
+            )
 
         });
 

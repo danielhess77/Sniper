@@ -51,6 +51,8 @@ export interface VWAPReclaimResult {
 
     risk: RiskResult;
 
+    score: number;
+
 }
 
 export class VWAPReclaim
@@ -111,21 +113,23 @@ implements Playbook<VWAPReclaimResult> {
 
         ) {
 
-            return {
+        return {
 
-                playbook: "VWAP Reclaim",
+            playbook: "VWAP Reclaim",
 
-                qualified: false,
+            qualified: false,
 
-                trend,
+            trend,
 
-                reclaim,
+            reclaim,
 
-                confirmation,
+            confirmation,
 
-                risk: defaultRisk
+            risk: defaultRisk,
 
-            };
+            score: 0
+
+};
 
         }
 
@@ -142,18 +146,21 @@ implements Playbook<VWAPReclaimResult> {
 
         const score = this.score.evaluate({
 
-        trend: 28,
+        trend: 30,
 
-        playbook: 24,
+        playbook: 25,
 
-        confirmation: 20,
+        confirmation: confirmation.score,
 
-        risk:
-        risk.riskReward >= 3
-            ? 15
-            : 10,
+        risk: this.score.evaluateRisk(
+        risk.riskReward
+),
 
-        entry: 10
+        entry: this.score.evaluateEntry(
+
+    candles.length - 1 - confirmation.candleIndex
+
+),
 
 });
 
@@ -169,9 +176,11 @@ implements Playbook<VWAPReclaimResult> {
 
             confirmation,
 
-            risk
+            risk,
 
-        };
+            score
+
+    };
 
     }
 
