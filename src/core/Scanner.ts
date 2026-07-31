@@ -2,7 +2,7 @@
  * Sniper
  * Scanner
  *
- * Version: 1.0
+ * Version: 1.2
  */
 
 import { BDKClient } from "./BDKClient.js";
@@ -30,40 +30,49 @@ export class Scanner {
 
     ) {}
 
-async scan(
-    symbol: string
-): Promise<ScanResult[]> {
+    async scan(
+        symbols: string[]
+    ): Promise<ScanResult[]> {
 
-    const candles =
-        await this.bdk.getHistory(symbol);
+        const histories = await Promise.all(
 
-    const results: ScanResult[] = [];
+            symbols.map(async symbol => ({
 
-    for (const playbook of this.playbooks) {
+                symbol,
 
-        const result =
-            playbook.evaluate(candles) as any;
+                candles: await this.bdk.getHistory(symbol)
 
-        if (!result.qualified) {
-            continue;
+            }))
+
+        );
+
+        const results: ScanResult[] = [];
+
+        for (const history of histories) {
+
+            for (const playbook of this.playbooks) {
+
+                const result =
+                    playbook.evaluate(history.candles) as any;
+
+                results.push({
+
+                    symbol: history.symbol,
+
+                    playbook: result.playbook,
+
+                    qualified: result.qualified,
+
+                    result
+
+                });
+
+            }
+
         }
 
-        results.push({
-
-            symbol,
-
-            playbook: result.playbook,
-
-            qualified: true,
-
-            result
-
-        });
+        return results;
 
     }
-
-    return results;
-
-}
 
 }
