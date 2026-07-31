@@ -7,7 +7,13 @@ import { OpeningRangeBreakout } from "./playbooks/OpeningRangeBreakout.js";
 import { VWAPReclaim } from "./playbooks/VWAPReclaim.js";
 import { FirstPullback } from "./playbooks/FirstPullback.js";
 
-async function main() {
+const SCAN_INTERVAL = 60_000;
+
+function sleep(ms: number) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function runScan(scanner: Scanner) {
 
     console.clear();
 
@@ -15,6 +21,59 @@ async function main() {
     console.log("            SNIPER v0.5");
     console.log("========================================");
     console.log("");
+    console.log(`Scan Time : ${new Date().toLocaleTimeString()}`);
+    console.log("");
+
+    console.log(`Scanning ${WATCHLIST.length} symbol(s)...`);
+    console.log(WATCHLIST.join(", "));
+    console.log("");
+
+    const results = await scanner.scan(WATCHLIST);
+
+    const qualifiedResults = results
+        .filter(r => r.qualified)
+        .sort((a, b) => b.result.score - a.result.score);
+
+    console.log("========================================");
+    console.log("SCAN SUMMARY");
+    console.log("========================================");
+    console.log(`Playbook Evaluations : ${results.length}`);
+    console.log(`Qualified Setups     : ${qualifiedResults.length}`);
+    console.log("");
+
+    if (qualifiedResults.length === 0) {
+
+        console.log("No qualified setups found.");
+        return;
+
+    }
+
+    for (const scan of qualifiedResults) {
+
+        const trade = scan.result.trade ?? scan.result.risk;
+
+        const direction =
+            scan.result.trend?.direction ??
+            scan.result.openingRange?.direction ??
+            "N/A";
+
+        console.log("----------------------------------------");
+        console.log(scan.symbol);
+        console.log(`Playbook : ${scan.playbook}`);
+        console.log(`Score    : ${scan.result.score}`);
+        console.log(`Direction: ${direction}`);
+        console.log("");
+        console.log(`Entry    : ${trade.entry.toFixed(2)}`);
+        console.log(`Stop     : ${trade.stop.toFixed(2)}`);
+        console.log(`Target   : ${trade.target.toFixed(2)}`);
+        console.log(`R:R      : ${trade.riskReward.toFixed(2)}`);
+        console.log("----------------------------------------");
+        console.log("");
+    }
+
+}
+
+async function main() {
 
     const bdk = new BDKClient();
 
@@ -36,122 +95,25 @@ async function main() {
 
     );
 
-    console.log(
-        `Scanning ${WATCHLIST.length} symbol(s)...`
-    );
+    while (true) {
 
-    console.log(
-        WATCHLIST.join(", ")
-    );
+        try {
 
-    console.log("");
+            await runScan(scanner);
 
-    const results =
-        await scanner.scan(WATCHLIST);
+        } catch (error) {
 
-    const qualifiedResults =
-        results.filter(
-            result => result.qualified
-        );
+            console.error(error);
 
-    qualifiedResults.sort(
+        }
 
-        (a, b) =>
-
-            b.result.score - a.result.score
-
-    );
-
-    console.log("========================================");
-    console.log("SCAN SUMMARY");
-    console.log("========================================");
-
-    console.log(
-        `Playbook Evaluations : ${results.length}`
-    );
-
-    console.log(
-        `Qualified Setups     : ${qualifiedResults.length}`
-    );
-
-    console.log("");
-
-    if (qualifiedResults.length === 0) {
-
-        console.log("No qualified setups found.");
         console.log("");
-        return;
+        console.log(`Next scan in ${SCAN_INTERVAL / 1000} seconds...`);
+
+        await sleep(SCAN_INTERVAL);
 
     }
-
-    for (const scan of qualifiedResults) {
-
-        const trade =
-            scan.result.trade ??
-            scan.result.risk;
-
-        const direction =
-            scan.result.trend?.direction ??
-            scan.result.openingRange?.direction ??
-            "N/A";
-
-        console.log("----------------------------------------");
-
-        console.log(
-            `${scan.symbol}`
-        );
-
-        console.log(
-            `Playbook : ${scan.playbook}`
-        );
-
-        console.log(
-            `Score    : ${scan.result.score}`
-        );
-
-        console.log(
-            `Direction: ${direction}`
-        );
-
-        console.log("");
-
-        console.log(
-            `Entry    : ${trade.entry.toFixed(2)}`
-        );
-
-        console.log(
-            `Stop     : ${trade.stop.toFixed(2)}`
-        );
-
-        console.log(
-            `Target   : ${trade.target.toFixed(2)}`
-        );
-
-        console.log(
-            `R:R      : ${trade.riskReward.toFixed(2)}`
-        );
-
-        console.log("----------------------------------------");
-        console.log("");
-
-    }
-
-    console.log("========================================");
-    console.log(
-        `Qualified Setups: ${qualifiedResults.length}`
-    );
-    console.log("========================================");
-    console.log("");
 
 }
 
-main().catch((error) => {
-
-    console.error("");
-    console.error("========================================");
-    console.error("SNIPER FAILED");
-    console.error("========================================");
-    console.error(error);
-    console.error("");
-
-});
+main().catch(console.error);
