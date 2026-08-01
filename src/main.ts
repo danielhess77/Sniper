@@ -7,15 +7,15 @@ import { OpeningRangeBreakout } from "./playbooks/OpeningRangeBreakout.js";
 import { VWAPReclaim } from "./playbooks/VWAPReclaim.js";
 import { FirstPullback } from "./playbooks/FirstPullback.js";
 
-const SCAN_INTERVAL = 60000;
+const SCAN_INTERVAL = 60_000;
 
-function sleep(ms: number) {
+function sleep(ms: number): Promise<void> {
 
     return new Promise(resolve => setTimeout(resolve, ms));
 
 }
 
-async function runScan(scanner: Scanner) {
+async function runScan(scanner: Scanner): Promise<void> {
 
     console.clear();
 
@@ -32,7 +32,7 @@ async function runScan(scanner: Scanner) {
         );
 
     console.log("========================================");
-    console.log("            SNIPER v0.6");
+    console.log("            SNIPER v0.7");
     console.log("========================================");
     console.log("");
 
@@ -54,12 +54,7 @@ async function runScan(scanner: Scanner) {
 
     const scoredResults =
         [...results].sort(
-
-            (a, b) =>
-
-                b.result.score -
-                a.result.score
-
+            (a, b) => b.score - a.score
         );
 
     const qualifiedResults =
@@ -82,7 +77,7 @@ async function runScan(scanner: Scanner) {
     console.log("");
 
     //----------------------------------------
-    // Top Ranked
+    // Top Ranked Setups
     //----------------------------------------
 
     console.log("----------------------------------------");
@@ -90,22 +85,32 @@ async function runScan(scanner: Scanner) {
     console.log("----------------------------------------");
     console.log("");
 
-    for (const scan of scoredResults.slice(0, 10)) {
+    const topResults =
+        scoredResults.slice(0, 10);
 
-        console.log(
+    if (topResults.length === 0) {
 
-            `${scan.symbol.padEnd(6)} ` +
-            `${scan.playbook.padEnd(26)} ` +
-            `Score ${scan.result.score}`
+        console.log("No scan results available.");
+        console.log("");
 
-        );
+    } else {
+
+        for (const scan of topResults) {
+
+            console.log(
+                `${scan.symbol.padEnd(6)} ` +
+                `${scan.playbook.padEnd(26)} ` +
+                `Score ${scan.score}`
+            );
+
+        }
+
+        console.log("");
 
     }
 
-    console.log("");
-
     //----------------------------------------
-    // Qualified
+    // Qualified Trades
     //----------------------------------------
 
     console.log("----------------------------------------");
@@ -123,41 +128,38 @@ async function runScan(scanner: Scanner) {
 
     for (const scan of qualifiedResults) {
 
-        const trade =
-            scan.result.trade ??
-            scan.result.risk;
-
-        const direction =
-            scan.result.trend?.direction ??
-            scan.result.openingRange?.direction ??
-            "N/A";
-
         console.log("========================================");
 
         console.log(scan.symbol);
 
-        console.log(`Playbook : ${scan.playbook}`);
+        console.log(
+            `Playbook : ${scan.playbook}`
+        );
 
-        console.log(`Score    : ${scan.result.score}`);
+        console.log(
+            `Score    : ${scan.score}`
+        );
 
-        console.log(`Direction: ${direction}`);
+        console.log(
+            `Direction: ${scan.direction}`
+        );
 
         console.log("");
 
         console.log(
-            `Entry    : ${trade.entry.toFixed(2)}`
+            `Entry    : ${scan.entry.toFixed(2)}`
         );
 
         console.log(
-            `Stop     : ${trade.stop.toFixed(2)}`
+            `Stop     : ${scan.stop.toFixed(2)}`
         );
 
         console.log(
-            `Target   : ${trade.target.toFixed(2)}`
+            `Target   : ${scan.target.toFixed(2)}`
         );
 
         console.log(
-            `R:R      : ${trade.riskReward.toFixed(2)}`
+            `R:R      : ${scan.riskReward.toFixed(2)}`
         );
 
         console.log("========================================");
@@ -167,27 +169,21 @@ async function runScan(scanner: Scanner) {
 
 }
 
-async function main() {
+async function main(): Promise<void> {
 
-    const bdk = new BDKClient();
+    const bdk =
+        new BDKClient();
 
-    const scanner = new Scanner(
-
-        bdk,
-
-        [
-
-            new TrendContinuation(),
-
-            new OpeningRangeBreakout(),
-
-            new VWAPReclaim(),
-
-            new FirstPullback()
-
-        ]
-
-    );
+    const scanner =
+        new Scanner(
+            bdk,
+            [
+                new TrendContinuation(),
+                new OpeningRangeBreakout(),
+                new VWAPReclaim(),
+                new FirstPullback()
+            ]
+        );
 
     while (true) {
 
@@ -195,11 +191,14 @@ async function main() {
 
             await runScan(scanner);
 
-        }
+        } catch (error) {
 
-        catch (error) {
-
+            console.error("");
+            console.error("========================================");
+            console.error("SNIPER SCAN FAILED");
+            console.error("========================================");
             console.error(error);
+            console.error("");
 
         }
 
@@ -213,4 +212,10 @@ async function main() {
 
 }
 
-main().catch(console.error);
+main().catch(error => {
+
+    console.error("");
+    console.error("SNIPER FAILED");
+    console.error(error);
+
+});

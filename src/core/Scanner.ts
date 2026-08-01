@@ -2,32 +2,21 @@
  * Sniper
  * Scanner
  *
- * Version: 1.3
+ * Version: 1.4
  */
 
 import { BDKClient } from "./BDKClient.js";
 import { Playbook } from "../playbooks/Playbook.js";
+import { ScanCard } from "../types.js";
+import { normalizeScan } from "./ScanNormalizer.js";
 
-export interface ScanResult {
-
-    symbol: string;
-
-    playbook: string;
-
-    qualified: boolean;
-
-    result: any;
-
-}
+export type ScanResult = ScanCard;
 
 export class Scanner {
 
     constructor(
-
         private bdk: BDKClient,
-
         private playbooks: Playbook<any>[]
-
     ) {}
 
     async scan(
@@ -40,31 +29,58 @@ export class Scanner {
 
                 symbol,
 
-                candles: await this.bdk.getHistory(symbol)
+                candles:
+                    await this.bdk.getHistory(symbol)
 
             }))
 
         );
 
-    for (const history of histories) {
+        //--------------------------------------------------
+        // Temporary live-data verification
+        //--------------------------------------------------
 
-    const latestCandle =
-        history.candles[history.candles.length - 1];
+        for (const history of histories) {
 
-        console.log(
-        history.symbol,
-        new Date(latestCandle.datetime).toLocaleString(
-            "en-US",
-            {
-                timeZone: "America/New_York"
+            const latestCandle =
+                history.candles[
+                    history.candles.length - 1
+                ];
+
+            if (!latestCandle) {
+
+                console.log(
+                    `${history.symbol} | No candle data`
+                );
+
+                continue;
+
             }
-        ),
-        latestCandle.close
-    );
 
-}
+            const candleTime =
+                new Date(
+                    latestCandle.datetime
+                ).toLocaleString(
+                    "en-US",
+                    {
+                        timeZone:
+                            "America/New_York"
+                    }
+                );
 
-console.log("");
+            console.log(
+                `${history.symbol} | ` +
+                `${candleTime} | ` +
+                `${latestCandle.close}`
+            );
+
+        }
+
+        console.log("");
+
+        //--------------------------------------------------
+        // Run Playbooks
+        //--------------------------------------------------
 
         const results: ScanResult[] = [];
 
@@ -73,19 +89,19 @@ console.log("");
             for (const playbook of this.playbooks) {
 
                 const result =
-                    playbook.evaluate(history.candles);
+                    playbook.evaluate(
+                        history.candles
+                    );
 
-                results.push({
+                const normalized =
+                    normalizeScan(
+                        history.symbol,
+                        result
+                    );
 
-                    symbol: history.symbol,
-
-                    playbook: result.playbook,
-
-                    qualified: result.qualified,
-
-                    result
-
-                });
+                results.push(
+                    normalized
+                );
 
             }
 
