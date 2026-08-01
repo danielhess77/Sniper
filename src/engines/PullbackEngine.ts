@@ -1,8 +1,12 @@
 /**
- * PullbackEngine v2.1
+ * PullbackEngine v2.2
  *
  * Evaluates the quality of a pullback
  * during an established trend.
+ *
+ * Returns the pullback candle and its index
+ * so downstream playbooks can evaluate
+ * context-aware confirmation.
  */
 
 import { Candle } from "../core/BDKClient.js";
@@ -15,6 +19,8 @@ export interface PullbackResult {
         | "EMA20"
         | "NONE";
 
+    candleIndex: number;
+
     pullbackCandle: Candle | null;
 
 }
@@ -26,6 +32,16 @@ export class PullbackEngine {
         trend: TrendResult
     ): PullbackResult {
 
+        const none: PullbackResult = {
+
+            level: "NONE",
+
+            candleIndex: -1,
+
+            pullbackCandle: null
+
+        };
+
         if (
 
             candles.length < 10 ||
@@ -34,18 +50,15 @@ export class PullbackEngine {
 
         ) {
 
-            return {
-
-                level: "NONE",
-
-                pullbackCandle: null
-
-            };
+            return none;
 
         }
 
+        const lastIndex =
+            candles.length - 1;
+
         const last =
-            candles[candles.length - 1];
+            candles[lastIndex];
 
         //--------------------------------------------------
         // Recent Momentum
@@ -55,10 +68,14 @@ export class PullbackEngine {
             candles.slice(-6);
 
         const highestHigh =
-            Math.max(...recent.map(c => c.high));
+            Math.max(
+                ...recent.map(c => c.high)
+            );
 
         const lowestLow =
-            Math.min(...recent.map(c => c.low));
+            Math.min(
+                ...recent.map(c => c.low)
+            );
 
         //--------------------------------------------------
         // Bullish
@@ -66,49 +83,23 @@ export class PullbackEngine {
 
         if (trend.direction === "BULLISH") {
 
-            // Must have recently expanded higher
-
             if (highestHigh <= trend.ema9) {
 
-                return {
-
-                    level: "NONE",
-
-                    pullbackCandle: null
-
-                };
+                return none;
 
             }
-
-            // Pullback too deep
 
             if (last.close < trend.ema20) {
 
-                return {
-
-                    level: "NONE",
-
-                    pullbackCandle: null
-
-                };
+                return none;
 
             }
-
-            // Trend failure
 
             if (last.close < trend.ema50) {
 
-                return {
-
-                    level: "NONE",
-
-                    pullbackCandle: null
-
-                };
+                return none;
 
             }
-
-            // Preferred: EMA9
 
             if (
 
@@ -122,13 +113,13 @@ export class PullbackEngine {
 
                     level: "EMA9",
 
+                    candleIndex: lastIndex,
+
                     pullbackCandle: last
 
                 };
 
             }
-
-            // Secondary: EMA20
 
             if (
 
@@ -141,6 +132,8 @@ export class PullbackEngine {
                 return {
 
                     level: "EMA20",
+
+                    candleIndex: lastIndex,
 
                     pullbackCandle: last
 
@@ -158,39 +151,19 @@ export class PullbackEngine {
 
             if (lowestLow >= trend.ema9) {
 
-                return {
-
-                    level: "NONE",
-
-                    pullbackCandle: null
-
-                };
+                return none;
 
             }
 
             if (last.close > trend.ema20) {
 
-                return {
-
-                    level: "NONE",
-
-                    pullbackCandle: null
-
-                };
+                return none;
 
             }
 
-            // Trend failure
-
             if (last.close > trend.ema50) {
 
-                return {
-
-                    level: "NONE",
-
-                    pullbackCandle: null
-
-                };
+                return none;
 
             }
 
@@ -205,6 +178,8 @@ export class PullbackEngine {
                 return {
 
                     level: "EMA9",
+
+                    candleIndex: lastIndex,
 
                     pullbackCandle: last
 
@@ -224,6 +199,8 @@ export class PullbackEngine {
 
                     level: "EMA20",
 
+                    candleIndex: lastIndex,
+
                     pullbackCandle: last
 
                 };
@@ -232,15 +209,7 @@ export class PullbackEngine {
 
         }
 
-        //--------------------------------------------------
-
-        return {
-
-            level: "NONE",
-
-            pullbackCandle: null
-
-        };
+        return none;
 
     }
 

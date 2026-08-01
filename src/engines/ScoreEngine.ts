@@ -1,5 +1,5 @@
 /**
- * ScoreEngine v1.1
+ * ScoreEngine v1.2
  *
  * Calculates the total setup score and provides
  * shared scoring methods used across all playbooks.
@@ -37,58 +37,52 @@ export class ScoreEngine {
 
     }
 
+    //--------------------------------------------------
+    // Risk / Reward Score
+    //--------------------------------------------------
+
     evaluateRisk(riskReward: number): number {
 
         if (
+
             !Number.isFinite(riskReward) ||
-            riskReward < 1.5
+            riskReward <= 0
+
         ) {
 
             return 0;
 
         }
 
-        if (riskReward >= 5.0) {
+        if (riskReward >= 5.0) return 15;
 
-            return 15;
+        if (riskReward >= 4.0) return 14;
 
-        }
+        if (riskReward >= 3.5) return 13;
 
-        if (riskReward >= 4.0) {
+        if (riskReward >= 3.0) return 12;
 
-            return 14;
+        if (riskReward >= 2.5) return 11;
 
-        }
+        if (riskReward >= 2.0) return 10;
 
-        if (riskReward >= 3.5) {
+        if (riskReward >= 1.75) return 8;
 
-            return 13;
+        if (riskReward >= 1.50) return 7;
 
-        }
+        if (riskReward >= 1.25) return 5;
 
-        if (riskReward >= 3.0) {
+        if (riskReward >= 1.00) return 3;
 
-            return 12;
-
-        }
-
-        if (riskReward >= 2.5) {
-
-            return 11;
-
-        }
-
-        if (riskReward >= 2.0) {
-
-            return 10;
-
-        }
-
-        return 7;
+        return 1;
 
     }
 
-        evaluateEntry(candlesAgo: number): number {
+    //--------------------------------------------------
+    // Entry Freshness Score
+    //--------------------------------------------------
+
+    evaluateEntry(candlesAgo: number): number {
 
         if (candlesAgo <= 0) {
 

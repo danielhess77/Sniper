@@ -1,15 +1,11 @@
 /**
- * ConfirmationEngine v1.3
+ * ConfirmationEngine v2.0
  *
- * Detects candlestick confirmation patterns.
+ * Searches for confirmation beginning at the
+ * supplied signal candle and continuing for
+ * the next three candles.
  *
- * Strong reversal patterns (Engulfing, Morning Star,
- * Evening Star, Hammer, Shooting Star) may confirm
- * a trade.
- *
- * Informational patterns (Doji, Spinning Top) never
- * confirm a trade by themselves, but may add
- * confidence when combined with another playbook.
+ * The strongest confirmation found wins.
  */
 
 import { Candle } from "../core/BDKClient.js";
@@ -41,41 +37,116 @@ export interface ConfirmationResult {
 
     candleIndex: number;
 
+    confirmationOffset: number;
+
     score: number;
 
 }
 
 export class ConfirmationEngine {
 
-    evaluate(candles: Candle[]): ConfirmationResult {
+    private static readonly LOOKAHEAD = 3;
 
-        if (candles.length < 3) {
+    evaluate(
 
-            return {
+        candles: Candle[],
 
-                confirmed: false,
+        signalIndex: number
 
-                pattern: "NONE",
+    ): ConfirmationResult {
 
-                quality: "NONE",
+        if (
 
-                candleIndex: -1,
+            candles.length < 3 ||
 
-                score: 0
+            signalIndex < 2 ||
 
-            };
+            signalIndex >= candles.length
+
+        ) {
+
+            return this.none();
 
         }
 
-        const lastIndex = candles.length - 1;
+        let best =
+            this.none();
 
-        const c1 = candles[lastIndex - 2];
-        const c2 = candles[lastIndex - 1];
-        const c3 = candles[lastIndex];
+        const end = Math.min(
 
-        //------------------------------------------
+            candles.length - 1,
+
+            signalIndex +
+            ConfirmationEngine.LOOKAHEAD
+
+        );
+
+        for (
+
+            let i = signalIndex;
+
+            i <= end;
+
+            i++
+
+        ) {
+
+            const result =
+                this.evaluateAt(
+                    candles,
+                    i
+                );
+
+            if (
+
+                result.score >
+                best.score
+
+            ) {
+
+                result.confirmationOffset =
+                    i - signalIndex;
+
+                best = result;
+
+            }
+
+        }
+
+        return best;
+
+    }
+
+    //--------------------------------------------------
+    // Evaluate Single Candle Position
+    //--------------------------------------------------
+
+    private evaluateAt(
+
+        candles: Candle[],
+
+        index: number
+
+    ): ConfirmationResult {
+
+        if (index < 2) {
+
+            return this.none();
+
+        }
+
+        const c1 =
+            candles[index - 2];
+
+        const c2 =
+            candles[index - 1];
+
+        const c3 =
+            candles[index];
+
+        //--------------------------------------------------
         // Bullish Engulfing
-        //------------------------------------------
+        //--------------------------------------------------
 
         if (
 
@@ -90,11 +161,14 @@ export class ConfirmationEngine {
 
                 confirmed: true,
 
-                pattern: "BULLISH_ENGULFING",
+                pattern:
+                    "BULLISH_ENGULFING",
 
                 quality: "HIGH",
 
-                candleIndex: lastIndex,
+                candleIndex: index,
+
+                confirmationOffset: 0,
 
                 score: 20
 
@@ -102,9 +176,9 @@ export class ConfirmationEngine {
 
         }
 
-        //------------------------------------------
+        //--------------------------------------------------
         // Bearish Engulfing
-        //------------------------------------------
+        //--------------------------------------------------
 
         if (
 
@@ -119,11 +193,14 @@ export class ConfirmationEngine {
 
                 confirmed: true,
 
-                pattern: "BEARISH_ENGULFING",
+                pattern:
+                    "BEARISH_ENGULFING",
 
                 quality: "HIGH",
 
-                candleIndex: lastIndex,
+                candleIndex: index,
+
+                confirmationOffset: 0,
 
                 score: 20
 
@@ -131,24 +208,33 @@ export class ConfirmationEngine {
 
         }
 
-        //------------------------------------------
-        // Shared Candle Measurements
-        //------------------------------------------
-
-        const body = Math.abs(c3.close - c3.open);
+        const body =
+            Math.abs(
+                c3.close -
+                c3.open
+            );
 
         const upperShadow =
-            c3.high - Math.max(c3.open, c3.close);
+            c3.high -
+            Math.max(
+                c3.open,
+                c3.close
+            );
 
         const lowerShadow =
-            Math.min(c3.open, c3.close) - c3.low;
+            Math.min(
+                c3.open,
+                c3.close
+            ) -
+            c3.low;
 
         const range =
-            c3.high - c3.low;
+            c3.high -
+            c3.low;
 
-        //------------------------------------------
+        //--------------------------------------------------
         // Hammer
-        //------------------------------------------
+        //--------------------------------------------------
 
         if (
 
@@ -166,7 +252,9 @@ export class ConfirmationEngine {
 
                 quality: "MEDIUM",
 
-                candleIndex: lastIndex,
+                candleIndex: index,
+
+                confirmationOffset: 0,
 
                 score: 16
 
@@ -174,9 +262,9 @@ export class ConfirmationEngine {
 
         }
 
-        //------------------------------------------
+        //--------------------------------------------------
         // Shooting Star
-        //------------------------------------------
+        //--------------------------------------------------
 
         if (
 
@@ -190,11 +278,14 @@ export class ConfirmationEngine {
 
                 confirmed: true,
 
-                pattern: "SHOOTING_STAR",
+                pattern:
+                    "SHOOTING_STAR",
 
                 quality: "MEDIUM",
 
-                candleIndex: lastIndex,
+                candleIndex: index,
+
+                confirmationOffset: 0,
 
                 score: 16
 
@@ -202,18 +293,24 @@ export class ConfirmationEngine {
 
         }
 
-        //------------------------------------------
+        //--------------------------------------------------
         // Morning Star
-        //------------------------------------------
+        //--------------------------------------------------
 
         if (
 
             c1.close < c1.open &&
-            Math.abs(c2.close - c2.open) <
-                Math.abs(c1.close - c1.open) * 0.40 &&
+            Math.abs(
+                c2.close -
+                c2.open
+            ) <
+            Math.abs(
+                c1.close -
+                c1.open
+            ) * 0.40 &&
             c3.close > c3.open &&
             c3.close >
-                (c1.open + c1.close) / 2
+            (c1.open + c1.close) / 2
 
         ) {
 
@@ -221,11 +318,14 @@ export class ConfirmationEngine {
 
                 confirmed: true,
 
-                pattern: "MORNING_STAR",
+                pattern:
+                    "MORNING_STAR",
 
                 quality: "HIGH",
 
-                candleIndex: lastIndex,
+                candleIndex: index,
+
+                confirmationOffset: 0,
 
                 score: 18
 
@@ -233,17 +333,23 @@ export class ConfirmationEngine {
 
         }
 
-        //------------------------------------------
+        //--------------------------------------------------
         // Evening Star
-        //------------------------------------------
+        //--------------------------------------------------
 
         if (
 
             c1.close > c1.open &&
-            Math.abs(c2.close - c2.open) <
-                Math.abs(c1.close - c1.open) * 0.40 &&
+            Math.abs(
+                c2.close -
+                c2.open
+            ) <
+            Math.abs(
+                c1.close -
+                c1.open
+            ) * 0.40 &&
             c3.close <
-                (c1.open + c1.close) / 2 &&
+            (c1.open + c1.close) / 2 &&
             c3.close < c3.open
 
         ) {
@@ -252,11 +358,14 @@ export class ConfirmationEngine {
 
                 confirmed: true,
 
-                pattern: "EVENING_STAR",
+                pattern:
+                    "EVENING_STAR",
 
                 quality: "HIGH",
 
-                candleIndex: lastIndex,
+                candleIndex: index,
+
+                confirmationOffset: 0,
 
                 score: 18
 
@@ -264,14 +373,15 @@ export class ConfirmationEngine {
 
         }
 
-        //------------------------------------------
+        //--------------------------------------------------
         // Doji
-        //------------------------------------------
+        //--------------------------------------------------
 
         if (
 
             range > 0 &&
-            body <= range * 0.10
+            body <=
+            range * 0.10
 
         ) {
 
@@ -283,7 +393,9 @@ export class ConfirmationEngine {
 
                 quality: "INFO",
 
-                candleIndex: lastIndex,
+                candleIndex: index,
+
+                confirmationOffset: 0,
 
                 score: 10
 
@@ -291,14 +403,15 @@ export class ConfirmationEngine {
 
         }
 
-        //------------------------------------------
+        //--------------------------------------------------
         // Spinning Top
-        //------------------------------------------
+        //--------------------------------------------------
 
         if (
 
             range > 0 &&
-            body <= range * 0.30 &&
+            body <=
+            range * 0.30 &&
             upperShadow > body &&
             lowerShadow > body
 
@@ -308,11 +421,14 @@ export class ConfirmationEngine {
 
                 confirmed: false,
 
-                pattern: "SPINNING_TOP",
+                pattern:
+                    "SPINNING_TOP",
 
                 quality: "INFO",
 
-                candleIndex: lastIndex,
+                candleIndex: index,
+
+                confirmationOffset: 0,
 
                 score: 8
 
@@ -320,9 +436,13 @@ export class ConfirmationEngine {
 
         }
 
-        //------------------------------------------
-        // None
-        //------------------------------------------
+        return this.none();
+
+    }
+
+    //--------------------------------------------------
+
+    private none(): ConfirmationResult {
 
         return {
 
@@ -333,6 +453,8 @@ export class ConfirmationEngine {
             quality: "NONE",
 
             candleIndex: -1,
+
+            confirmationOffset: -1,
 
             score: 0
 

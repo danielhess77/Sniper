@@ -11,10 +11,18 @@ export const WATCHLIST: string[] = [
 
     "QQQ",
 
-    "AAPL",
+    "AMD",
 
     "NVDA",
 
-    "MSFT"
+    "MSFT",
+
+    "AVGO",
+
+    "GOOGL",
+
+    "TSLA",
+
+    "SMH"
 
 ];

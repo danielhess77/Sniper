@@ -2,7 +2,7 @@
  * Sniper
  * First Pullback Playbook
  *
- * Version: 1.0
+ * Version: 1.1
  */
 
 import { Candle } from "../core/BDKClient.js";
@@ -70,7 +70,8 @@ implements Playbook<FirstPullbackResult> {
     private risk =
         new RiskEngine();
 
-    private score = new ScoreEngine();
+    private score =
+        new ScoreEngine();
 
     evaluate(
         candles: Candle[]
@@ -81,16 +82,14 @@ implements Playbook<FirstPullbackResult> {
 
         const pullback =
             this.pullback.evaluate(
-
-            candles,
-
-            trend
-
-    );
+                candles,
+                trend
+            );
 
         const confirmation =
             this.confirmation.evaluate(
-                candles
+                candles,
+                pullback.candleIndex
             );
 
         const defaultRisk: RiskResult = {
@@ -107,47 +106,57 @@ implements Playbook<FirstPullbackResult> {
 
         };
 
+        //--------------------------------------------------
+        // No Trend / No Pullback
+        //--------------------------------------------------
+
         if (
 
             trend.direction === "NONE" ||
 
-            pullback.level === "NONE" ||
-
-            !confirmation.confirmed
+            pullback.level === "NONE"
 
         ) {
 
-        return {
+            return {
 
-            playbook:
-            "First Pullback",
+                playbook:
+                    "First Pullback",
 
-            qualified: false,
-
-            trend,
-
-            pullback,
-
-            confirmation,
-
-            risk: defaultRisk,
-
-            score: 0
-
-};
-
-        }
-
-                const risk =
-            this.risk.evaluate(
-
-                candles,
+                qualified: false,
 
                 trend,
 
-                confirmation
+                pullback,
 
-            );
+                confirmation,
+
+                risk: defaultRisk,
+
+                score: 0
+
+            };
+
+        }
+
+        //--------------------------------------------------
+        // Risk
+        //--------------------------------------------------
+
+        const risk =
+            confirmation.confirmed
+
+                ? this.risk.evaluate(
+                    candles,
+                    trend,
+                    confirmation
+                )
+
+                : defaultRisk;
+
+        //--------------------------------------------------
+        // Score
+        //--------------------------------------------------
 
         const score =
             this.score.evaluate({
@@ -168,14 +177,20 @@ implements Playbook<FirstPullbackResult> {
                     ),
 
                 entry:
-                    this.score.evaluateEntry(
+                    confirmation.confirmed
+                        ? this.score.evaluateEntry(
 
-                        candles.length - 1 -
-                        confirmation.candleIndex
+                            candles.length - 1 -
+                            confirmation.candleIndex
 
-                    )
+                        )
+                        : 0
 
             });
+
+        //--------------------------------------------------
+        // Final
+        //--------------------------------------------------
 
         return {
 
@@ -183,7 +198,7 @@ implements Playbook<FirstPullbackResult> {
                 "First Pullback",
 
             qualified:
-                risk.valid,
+                confirmation.confirmed,
 
             trend,
 

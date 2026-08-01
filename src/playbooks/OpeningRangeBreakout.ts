@@ -61,7 +61,13 @@ export class OpeningRangeBreakout
             this.openingRange.evaluate(candles);
 
         const confirmation =
-            this.confirmation.evaluate(candles);
+        this.confirmation.evaluate(
+
+        candles,
+
+        openingRange.breakoutIndex
+
+    );
 
         let trade = {
 

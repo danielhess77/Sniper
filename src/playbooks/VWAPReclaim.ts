@@ -87,7 +87,13 @@ implements Playbook<VWAPReclaimResult> {
             );
 
         const confirmation =
-            this.confirmation.evaluate(candles);
+        this.confirmation.evaluate(
+
+        candles,
+
+        reclaim.candleIndex
+
+    );
 
         const defaultRisk: RiskResult = {
 

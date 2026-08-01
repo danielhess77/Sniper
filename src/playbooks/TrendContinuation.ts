@@ -2,7 +2,7 @@
  * Sniper
  * Trend Continuation Playbook
  *
- * Version: 0.7
+ * Version: 0.8
  */
 
 import { Candle } from "../core/BDKClient.js";
@@ -10,8 +10,8 @@ import { TrendQualification } from "../core/TrendQualification.js";
 import { PullbackEngine } from "../engines/PullbackEngine.js";
 import { ConfirmationEngine } from "../engines/ConfirmationEngine.js";
 import { RiskEngine } from "../engines/RiskEngine.js";
-import { Playbook } from "./Playbook.js";
 import { ScoreEngine } from "../engines/ScoreEngine.js";
+import { Playbook } from "./Playbook.js";
 
 export interface TrendContinuationResult {
 
@@ -34,31 +34,41 @@ export interface TrendContinuationResult {
 export class TrendContinuation
     implements Playbook<TrendContinuationResult> {
 
-    private trend = new TrendQualification();
+    private trend =
+        new TrendQualification();
 
-    private pullback = new PullbackEngine();
+    private pullback =
+        new PullbackEngine();
 
-    private confirmation = new ConfirmationEngine();
+    private confirmation =
+        new ConfirmationEngine();
 
-    private risk = new RiskEngine();
+    private risk =
+        new RiskEngine();
 
-    private score = new ScoreEngine();
+    private score =
+        new ScoreEngine();
 
     evaluate(
         candles: Candle[]
     ): TrendContinuationResult {
 
-        const trend = this.trend.evaluate(candles);
+        const trend =
+            this.trend.evaluate(candles);
 
-        const pullback = this.pullback.evaluate(
-            candles,
-            trend
-        );
+        const pullback =
+            this.pullback.evaluate(
+                candles,
+                trend
+            );
 
         const confirmation =
-            this.confirmation.evaluate(candles);
+            this.confirmation.evaluate(
+                candles,
+                pullback.candleIndex
+            );
 
-        let risk = {
+        const defaultRisk = {
 
             valid: false,
 
@@ -72,47 +82,100 @@ export class TrendContinuation
 
         };
 
+        //--------------------------------------------------
+        // No Trend / No Pullback
+        //--------------------------------------------------
+
         if (
 
-            trend.direction !== "NONE" &&
-            pullback.level !== "NONE" &&
-            confirmation.confirmed
+            trend.direction === "NONE" ||
+
+            pullback.level === "NONE"
 
         ) {
 
-            risk = this.risk.evaluate(
-                candles,
+            return {
+
+                playbook: "Trend Continuation",
+
+                qualified: false,
+
                 trend,
-                confirmation
-            );
+
+                pullback,
+
+                confirmation,
+
+                risk: defaultRisk,
+
+                score: 0
+
+            };
 
         }
 
-      const score = this.score.evaluate({
+        //--------------------------------------------------
+        // Risk
+        //--------------------------------------------------
 
-        trend: 30,
+        const risk =
+            confirmation.confirmed
 
-        playbook: 25,
+                ? this.risk.evaluate(
 
-        confirmation: confirmation.score,
+                    candles,
 
-        risk: this.score.evaluateRisk(
-        risk.riskReward
-),
+                    trend,
 
-        entry: this.score.evaluateEntry(
+                    confirmation
 
-        candles.length - 1 - confirmation.candleIndex
+                )
 
-),
+                : defaultRisk;
 
-});
+        //--------------------------------------------------
+        // Score
+        //--------------------------------------------------
+
+        const score =
+            this.score.evaluate({
+
+                trend: 30,
+
+                playbook: 25,
+
+                confirmation:
+                    confirmation.score,
+
+                risk:
+                    this.score.evaluateRisk(
+                        risk.riskReward
+                    ),
+
+                entry:
+                    confirmation.confirmed
+
+                        ? this.score.evaluateEntry(
+
+                            candles.length - 1 -
+                            confirmation.candleIndex
+
+                        )
+
+                        : 0
+
+            });
+
+        //--------------------------------------------------
+        // Final
+        //--------------------------------------------------
 
         return {
 
             playbook: "Trend Continuation",
 
-            qualified: risk.valid,
+            qualified:
+                confirmation.confirmed,
 
             trend,
 

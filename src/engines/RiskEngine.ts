@@ -7,9 +7,11 @@
  * - Target
  * - Risk / Reward
  *
- * Stops and targets are derived from
- * recent market structure instead of
- * a fixed 2R projection.
+ * Never rejects trades solely because
+ * the Risk / Reward is below 2:1.
+ *
+ * Only invalid trade geometry causes
+ * valid = false.
  */
 
 import { Candle } from "../core/BDKClient.js";
@@ -33,21 +35,25 @@ export interface RiskResult {
 export class RiskEngine {
 
     evaluate(
+
         candles: Candle[],
+
         trend: TrendResult,
-        confirmation: ConfirmationResult,
-        entryOverride?: number
+
+        confirmation: ConfirmationResult
+
     ): RiskResult {
 
         //--------------------------------------------------
-        // Validation
+        // Basic Validation
         //--------------------------------------------------
 
         if (
 
             candles.length < 20 ||
+
             trend.direction === "NONE" ||
-            !confirmation.confirmed ||
+
             confirmation.candleIndex < 0
 
         ) {
@@ -68,28 +74,42 @@ export class RiskEngine {
 
         }
 
-        const signal = candles[confirmation.candleIndex];
+        const signal =
+            candles[confirmation.candleIndex];
 
         const entry =
-            entryOverride ?? signal.close;
+            signal.close;
 
         //--------------------------------------------------
-        // Recent Structure
+        // Structure Windows
         //--------------------------------------------------
 
-        const stopWindow = candles.slice(
-            Math.max(0, confirmation.candleIndex - 4),
-            confirmation.candleIndex + 1
-        );
+        const stopWindow =
+            candles.slice(
 
-        const targetWindow = candles.slice(
-            Math.max(0, confirmation.candleIndex - 19),
-            confirmation.candleIndex + 1
-        );
+                Math.max(
+                    0,
+                    confirmation.candleIndex - 4
+                ),
+
+                confirmation.candleIndex + 1
+
+            );
+
+        const targetWindow =
+            candles.slice(
+
+                Math.max(
+                    0,
+                    confirmation.candleIndex - 19
+                ),
+
+                confirmation.candleIndex + 1
+
+            );
 
         let stop = 0;
         let target = 0;
-        let riskReward = 0;
 
         //--------------------------------------------------
         // Bullish
@@ -97,43 +117,23 @@ export class RiskEngine {
 
         if (trend.direction === "BULLISH") {
 
-            const recentLow =
-                Math.min(...stopWindow.map(c => c.low));
+            stop = Math.min(
 
-            stop = Math.min(signal.low, recentLow);
+                signal.low,
 
-            const recentHigh =
-                Math.max(...targetWindow.map(c => c.high));
+                ...stopWindow.map(
+                    c => c.low
+                )
 
-            target = recentHigh;
+            );
 
-            const risk = entry - stop;
-            const reward = target - entry;
+            target = Math.max(
 
-            if (
+                ...targetWindow.map(
+                    c => c.high
+                )
 
-                risk <= 0 ||
-                reward <= 0
-
-            ) {
-
-                return {
-
-                    valid: false,
-
-                    entry,
-
-                    stop,
-
-                    target,
-
-                    riskReward: 0
-
-                };
-
-            }
-
-            riskReward = reward / risk;
+            );
 
         }
 
@@ -143,43 +143,74 @@ export class RiskEngine {
 
         else {
 
-            const recentHigh =
-                Math.max(...stopWindow.map(c => c.high));
+            stop = Math.max(
 
-            stop = Math.max(signal.high, recentHigh);
+                signal.high,
 
-            const recentLow =
-                Math.min(...targetWindow.map(c => c.low));
+                ...stopWindow.map(
+                    c => c.high
+                )
 
-            target = recentLow;
+            );
 
-            const risk = stop - entry;
-            const reward = entry - target;
+            target = Math.min(
 
-            if (
+                ...targetWindow.map(
+                    c => c.low
+                )
 
-                risk <= 0 ||
-                reward <= 0
+            );
 
-            ) {
+        }
 
-                return {
+        //--------------------------------------------------
+        // Geometry Validation
+        //--------------------------------------------------
 
-                    valid: false,
+        let risk = 0;
+        let reward = 0;
 
-                    entry,
+        if (trend.direction === "BULLISH") {
 
-                    stop,
+            risk =
+                entry - stop;
 
-                    target,
+            reward =
+                target - entry;
 
-                    riskReward: 0
+        }
 
-                };
+        else {
 
-            }
+            risk =
+                stop - entry;
 
-            riskReward = reward / risk;
+            reward =
+                entry - target;
+
+        }
+
+        if (
+
+            risk <= 0 ||
+
+            reward <= 0
+
+        ) {
+
+            return {
+
+                valid: false,
+
+                entry,
+
+                stop,
+
+                target,
+
+                riskReward: 0
+
+            };
 
         }
 
@@ -189,7 +220,7 @@ export class RiskEngine {
 
         return {
 
-            valid: riskReward >= 2,
+            valid: true,
 
             entry,
 
@@ -197,7 +228,8 @@ export class RiskEngine {
 
             target,
 
-            riskReward
+            riskReward:
+                reward / risk
 
         };
 

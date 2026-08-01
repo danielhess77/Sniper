@@ -46,6 +46,26 @@ export class Scanner {
 
         );
 
+    for (const history of histories) {
+
+    const latestCandle =
+        history.candles[history.candles.length - 1];
+
+        console.log(
+        history.symbol,
+        new Date(latestCandle.datetime).toLocaleString(
+            "en-US",
+            {
+                timeZone: "America/New_York"
+            }
+        ),
+        latestCandle.close
+    );
+
+}
+
+console.log("");
+
         const results: ScanResult[] = [];
 
         for (const history of histories) {
