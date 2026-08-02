@@ -94,10 +94,11 @@ export class Scanner {
                     );
 
                 const normalized =
-                    normalizeScan(
-                        history.symbol,
-                        result
-                    );
+                normalizeScan(
+                history.symbol,
+                result,
+                history.candles
+        );
 
                 results.push(
                     normalized
