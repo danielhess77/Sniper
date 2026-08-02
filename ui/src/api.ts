@@ -11,6 +11,8 @@ export interface ScanCard {
 
     playbook: string;
 
+    triggerTime: string;
+
     qualified: boolean;
 
     score: number;

@@ -1,10 +1,5 @@
 /**
- * Sniper
- * Shared Types
- *
- * Every playbook is normalized into this shape
- * before being displayed in the UI or returned
- * by the API.
+ * Shared Sniper Types
  */
 
 export interface ScanCard {
@@ -12,6 +7,8 @@ export interface ScanCard {
     symbol: string;
 
     playbook: string;
+
+    triggerTime: string;
 
     qualified: boolean;
 

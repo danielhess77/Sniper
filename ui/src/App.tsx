@@ -341,6 +341,8 @@ function App() {
 
                                 </th>
 
+                                <th>Triggered</th>
+
                                 <th>
 
                                     Score
@@ -384,6 +386,8 @@ function App() {
                                     <td>{scan.symbol}</td>
 
                                     <td>{scan.playbook}</td>
+
+                                    <td>{scan.triggerTime}</td>
 
                                     <td>{scan.score}</td>
 

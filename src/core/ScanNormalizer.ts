@@ -35,6 +35,16 @@ export function normalizeScan(
 
         playbook: result.playbook,
 
+        triggerTime:
+        new Date().toLocaleTimeString(
+        "en-US",
+        {
+            timeZone: "America/New_York",
+            hour: "numeric",
+            minute: "2-digit"
+        }
+    ),
+
         qualified: result.qualified,
 
         score: result.score ?? 0,
