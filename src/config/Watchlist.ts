@@ -23,6 +23,62 @@ export const WATCHLIST: string[] = [
 
     "TSLA",
 
-    "SMH"
+    "SMH",
+
+    "MRVL",
+
+    "SMCI",
+
+    "INTC",
+
+    "ON",
+
+    "ORCL",
+
+    "META",
+
+    "AMZN",
+
+    "DIS",
+
+    "NKE",
+
+    "MCD",
+
+    "COST",
+
+    "HOOD",
+
+    "PYPL",
+
+    "SOFI",
+
+    "MSTR",
+
+    "MARA",
+
+    "SLV",
+
+    "GLD",
+
+    "GDX",
+
+    "SLB",
+
+    "HAL",
+
+    "GILD",
+
+    "XBI",
+
+    "PFE",
+
+    "ABBV",
+
+    "RGTI",
+
+    
+
+
 
 ];
