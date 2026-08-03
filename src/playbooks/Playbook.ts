@@ -1,5 +1,17 @@
+/**
+ * Sniper
+ * Playbook Interface
+ */
+
 import { Candle } from "../core/BDKClient.js";
-import { ValidationResult } from "../engines/SignalValidationEngine.js";
+
+export interface ValidationResult {
+
+    active: boolean;
+
+    reason: string;
+
+}
 
 export interface Playbook<T> {
 

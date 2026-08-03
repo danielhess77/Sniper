@@ -2,7 +2,7 @@
  * Sniper
  * Trend Continuation Playbook
  *
- * Version: 0.8
+ * Version: 1.0
  */
 
 import { Candle } from "../core/BDKClient.js";
@@ -11,7 +11,10 @@ import { PullbackEngine } from "../engines/PullbackEngine.js";
 import { ConfirmationEngine } from "../engines/ConfirmationEngine.js";
 import { RiskEngine } from "../engines/RiskEngine.js";
 import { ScoreEngine } from "../engines/ScoreEngine.js";
-import { Playbook } from "./Playbook.js";
+import {
+    Playbook,
+    ValidationResult
+} from "./Playbook.js";
 
 export interface TrendContinuationResult {
 
@@ -32,7 +35,7 @@ export interface TrendContinuationResult {
 }
 
 export class TrendContinuation
-    implements Playbook<TrendContinuationResult> {
+implements Playbook<TrendContinuationResult> {
 
     private trend =
         new TrendQualification();
@@ -82,10 +85,6 @@ export class TrendContinuation
 
         };
 
-        //--------------------------------------------------
-        // No Trend / No Pullback
-        //--------------------------------------------------
-
         if (
 
             trend.direction === "NONE" ||
@@ -96,7 +95,8 @@ export class TrendContinuation
 
             return {
 
-                playbook: "Trend Continuation",
+                playbook:
+                    "Trend Continuation",
 
                 qualified: false,
 
@@ -114,11 +114,8 @@ export class TrendContinuation
 
         }
 
-        //--------------------------------------------------
-        // Risk
-        //--------------------------------------------------
-
         const risk =
+
             confirmation.confirmed
 
                 ? this.risk.evaluate(
@@ -132,10 +129,6 @@ export class TrendContinuation
                 )
 
                 : defaultRisk;
-
-        //--------------------------------------------------
-        // Score
-        //--------------------------------------------------
 
         const score =
             this.score.evaluate({
@@ -153,11 +146,13 @@ export class TrendContinuation
                     ),
 
                 entry:
+
                     confirmation.confirmed
 
                         ? this.score.evaluateEntry(
 
                             candles.length - 1 -
+
                             confirmation.candleIndex
 
                         )
@@ -166,13 +161,10 @@ export class TrendContinuation
 
             });
 
-        //--------------------------------------------------
-        // Final
-        //--------------------------------------------------
-
         return {
 
-            playbook: "Trend Continuation",
+            playbook:
+                "Trend Continuation",
 
             qualified:
                 confirmation.confirmed,
@@ -186,6 +178,101 @@ export class TrendContinuation
             risk,
 
             score
+
+        };
+
+    }
+
+    validate(
+
+        candles: Candle[],
+
+        result: TrendContinuationResult
+
+    ): ValidationResult {
+
+        if (!result.qualified) {
+
+            return {
+
+                active: false,
+
+                reason: "Not Qualified"
+
+            };
+
+        }
+
+        const last =
+            candles[candles.length - 1];
+
+        //--------------------------------------------------
+        // Bullish Trend
+        //--------------------------------------------------
+
+        if (
+
+            result.trend.direction === "BULLISH"
+
+        ) {
+
+            if (
+
+                last.close < result.trend.ema20
+
+            ) {
+
+                return {
+
+                    active: false,
+
+                    reason:
+                        "Lost EMA20"
+
+                };
+
+            }
+
+        }
+
+        //--------------------------------------------------
+        // Bearish Trend
+        //--------------------------------------------------
+
+        if (
+
+            result.trend.direction === "BEARISH"
+
+        ) {
+
+            if (
+
+                last.close > result.trend.ema20
+
+            ) {
+
+                return {
+
+                    active: false,
+
+                    reason:
+                        "Lost EMA20"
+
+                };
+
+            }
+
+        }
+
+        //--------------------------------------------------
+        // Still Active
+        //--------------------------------------------------
+
+        return {
+
+            active: true,
+
+            reason: ""
 
         };
 

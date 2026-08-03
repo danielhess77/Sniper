@@ -2,28 +2,19 @@
  * Sniper
  * First Pullback Playbook
  *
- * Version: 1.1
+ * Version: 2.0
  */
 
 import { Candle } from "../core/BDKClient.js";
-import { Playbook } from "./Playbook.js";
 import { ScoreEngine } from "../engines/ScoreEngine.js";
-
+import { TrendQualification } from "../core/TrendQualification.js";
+import { PullbackEngine } from "../engines/PullbackEngine.js";
+import { ConfirmationEngine } from "../engines/ConfirmationEngine.js";
+import { RiskEngine } from "../engines/RiskEngine.js";
 import {
-    TrendQualification
-} from "../core/TrendQualification.js";
-
-import {
-    PullbackEngine
-} from "../engines/PullbackEngine.js";
-
-import {
-    ConfirmationEngine
-} from "../engines/ConfirmationEngine.js";
-
-import {
-    RiskEngine
-} from "../engines/RiskEngine.js";
+    Playbook,
+    ValidationResult
+} from "./Playbook.js";
 
 type TrendResult =
     ReturnType<TrendQualification["evaluate"]>;
@@ -106,10 +97,6 @@ implements Playbook<FirstPullbackResult> {
 
         };
 
-        //--------------------------------------------------
-        // No Trend / No Pullback
-        //--------------------------------------------------
-
         if (
 
             trend.direction === "NONE" ||
@@ -139,24 +126,21 @@ implements Playbook<FirstPullbackResult> {
 
         }
 
-        //--------------------------------------------------
-        // Risk
-        //--------------------------------------------------
-
         const risk =
+
             confirmation.confirmed
 
                 ? this.risk.evaluate(
+
                     candles,
+
                     trend,
+
                     confirmation
+
                 )
 
                 : defaultRisk;
-
-        //--------------------------------------------------
-        // Score
-        //--------------------------------------------------
 
         const score =
             this.score.evaluate({
@@ -164,8 +148,11 @@ implements Playbook<FirstPullbackResult> {
                 trend: 30,
 
                 playbook:
+
                     pullback.level === "EMA9"
+
                         ? 25
+
                         : 20,
 
                 confirmation:
@@ -177,20 +164,20 @@ implements Playbook<FirstPullbackResult> {
                     ),
 
                 entry:
+
                     confirmation.confirmed
+
                         ? this.score.evaluateEntry(
 
                             candles.length - 1 -
+
                             confirmation.candleIndex
 
                         )
+
                         : 0
 
             });
-
-        //--------------------------------------------------
-        // Final
-        //--------------------------------------------------
 
         return {
 
@@ -209,6 +196,101 @@ implements Playbook<FirstPullbackResult> {
             risk,
 
             score
+
+        };
+
+    }
+
+    validate(
+
+        candles: Candle[],
+
+        result: FirstPullbackResult
+
+    ): ValidationResult {
+
+        if (!result.qualified) {
+
+            return {
+
+                active: false,
+
+                reason: "Not Qualified"
+
+            };
+
+        }
+
+        const last =
+            candles[candles.length - 1];
+
+        //--------------------------------------------------
+        // Bullish Pullback
+        //--------------------------------------------------
+
+        if (
+
+            result.trend.direction === "BULLISH"
+
+        ) {
+
+            if (
+
+                last.close < result.trend.ema20
+
+            ) {
+
+                return {
+
+                    active: false,
+
+                    reason:
+                        "Trend Failed"
+
+                };
+
+            }
+
+        }
+
+        //--------------------------------------------------
+        // Bearish Pullback
+        //--------------------------------------------------
+
+        if (
+
+            result.trend.direction === "BEARISH"
+
+        ) {
+
+            if (
+
+                last.close > result.trend.ema20
+
+            ) {
+
+                return {
+
+                    active: false,
+
+                    reason:
+                        "Trend Failed"
+
+                };
+
+            }
+
+        }
+
+        //--------------------------------------------------
+        // Still Active
+        //--------------------------------------------------
+
+        return {
+
+            active: true,
+
+            reason: ""
 
         };
 

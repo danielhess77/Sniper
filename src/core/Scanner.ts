@@ -2,12 +2,12 @@
  * Sniper
  * Scanner
  *
- * Version: 1.4
+ * Version: 2.0
  */
 
 import { BDKClient } from "./BDKClient.js";
 import { Playbook } from "../playbooks/Playbook.js";
-import { ScanCard } from "../types.js";
+import type { ScanCard } from "../types.js";
 import { normalizeScan } from "./ScanNormalizer.js";
 
 export type ScanResult = ScanCard;
@@ -15,8 +15,11 @@ export type ScanResult = ScanCard;
 export class Scanner {
 
     constructor(
+
         private bdk: BDKClient,
+
         private playbooks: Playbook<any>[]
+
     ) {}
 
     async scan(
@@ -29,49 +32,43 @@ export class Scanner {
 
                 symbol,
 
-                candles:
-                    await this.bdk.getHistory(symbol)
+                candles: await this.bdk.getHistory(symbol)
 
             }))
 
         );
 
         //--------------------------------------------------
-        // Temporary live-data verification
+        // Debug
         //--------------------------------------------------
 
         for (const history of histories) {
 
-            const latestCandle =
+            const latest =
                 history.candles[
                     history.candles.length - 1
                 ];
 
-            if (!latestCandle) {
-
-                console.log(
-                    `${history.symbol} | No candle data`
-                );
+            if (!latest) {
 
                 continue;
 
             }
 
-            const candleTime =
-                new Date(
-                    latestCandle.datetime
-                ).toLocaleString(
+            console.log(
+
+                `${history.symbol} | ` +
+
+                `${new Date(latest.datetime).toLocaleString(
                     "en-US",
                     {
                         timeZone:
                             "America/New_York"
                     }
-                );
+                )} | ` +
 
-            console.log(
-                `${history.symbol} | ` +
-                `${candleTime} | ` +
-                `${latestCandle.close}`
+                latest.close
+
             );
 
         }
@@ -79,7 +76,7 @@ export class Scanner {
         console.log("");
 
         //--------------------------------------------------
-        // Run Playbooks
+        // Scan
         //--------------------------------------------------
 
         const results: ScanResult[] = [];
@@ -93,15 +90,30 @@ export class Scanner {
                         history.candles
                     );
 
-                const normalized =
-                normalizeScan(
-                history.symbol,
-                result,
-                history.candles
-        );
+                const validation =
+                    playbook.validate(
+                        history.candles,
+                        result
+                    );
+
+                if (!validation.active) {
+
+                    continue;
+
+                }
 
                 results.push(
-                    normalized
+
+                    normalizeScan(
+
+                        history.symbol,
+
+                        result,
+
+                        history.candles
+
+                    )
+
                 );
 
             }

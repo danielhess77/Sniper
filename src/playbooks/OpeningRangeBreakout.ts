@@ -2,7 +2,7 @@
  * Sniper
  * Opening Range Breakout Playbook
  *
- * Version: 1.3
+ * Version: 2.0
  */
 
 import { Candle } from "../core/BDKClient.js";
@@ -10,6 +10,14 @@ import { OpeningRangeEngine } from "../engines/OpeningRangeEngine.js";
 import { ConfirmationEngine } from "../engines/ConfirmationEngine.js";
 import { ScoreEngine } from "../engines/ScoreEngine.js";
 import { Playbook } from "./Playbook.js";
+
+export interface ValidationResult {
+
+    active: boolean;
+
+    reason: string;
+
+}
 
 export interface OpeningRangeBreakoutResult {
 
@@ -42,7 +50,7 @@ export interface OpeningRangeBreakoutResult {
 }
 
 export class OpeningRangeBreakout
-    implements Playbook<OpeningRangeBreakoutResult> {
+implements Playbook<OpeningRangeBreakoutResult> {
 
     private openingRange =
         new OpeningRangeEngine();
@@ -61,13 +69,10 @@ export class OpeningRangeBreakout
             this.openingRange.evaluate(candles);
 
         const confirmation =
-        this.confirmation.evaluate(
-
-        candles,
-
-        openingRange.breakoutIndex
-
-    );
+            this.confirmation.evaluate(
+                candles,
+                openingRange.breakoutIndex
+            );
 
         let trade = {
 
@@ -95,8 +100,11 @@ export class OpeningRangeBreakout
                 openingRange.breakoutPrice;
 
             const stop =
+
                 openingRange.direction === "BULLISH"
+
                     ? openingRange.low
+
                     : openingRange.high;
 
             const breakoutCandles =
@@ -104,27 +112,21 @@ export class OpeningRangeBreakout
                     openingRange.breakoutIndex
                 );
 
-            let target = entry;
+            const target =
 
-            if (
                 openingRange.direction === "BULLISH"
-            ) {
 
-                target = Math.max(
-                    ...breakoutCandles.map(
-                        c => c.high
+                    ? Math.max(
+                        ...breakoutCandles.map(
+                            c => c.high
+                        )
                     )
-                );
 
-            } else {
-
-                target = Math.min(
-                    ...breakoutCandles.map(
-                        c => c.low
-                    )
-                );
-
-            }
+                    : Math.min(
+                        ...breakoutCandles.map(
+                            c => c.low
+                        )
+                    );
 
             const risk =
                 Math.abs(entry - stop);
@@ -133,8 +135,11 @@ export class OpeningRangeBreakout
                 Math.abs(target - entry);
 
             const riskReward =
+
                 risk > 0
+
                     ? reward / risk
+
                     : 0;
 
             trade = {
@@ -159,15 +164,21 @@ export class OpeningRangeBreakout
 
             playbook: 25,
 
-            confirmation: confirmation.score,
+            confirmation:
+                confirmation.score,
 
-            risk: this.score.evaluateRisk(
-                trade.riskReward
-            ),
+            risk:
+                this.score.evaluateRisk(
+                    trade.riskReward
+                ),
 
-            entry: this.score.evaluateEntry(
-                candles.length - 1 - confirmation.candleIndex
-            )
+            entry:
+                this.score.evaluateEntry(
+
+                    candles.length - 1 -
+                    confirmation.candleIndex
+
+                )
 
         });
 
@@ -186,6 +197,101 @@ export class OpeningRangeBreakout
             trade,
 
             score
+
+        };
+
+    }
+
+    validate(
+
+        candles: Candle[],
+
+        result: OpeningRangeBreakoutResult
+
+    ): ValidationResult {
+
+        if (!result.qualified) {
+
+            return {
+
+                active: false,
+
+                reason: "Not Qualified"
+
+            };
+
+        }
+
+        const last =
+            candles[candles.length - 1];
+
+        //--------------------------------------------------
+        // Bullish ORB
+        //--------------------------------------------------
+
+        if (
+
+            result.openingRange.direction === "BULLISH"
+
+        ) {
+
+            if (
+
+                last.close < result.openingRange.high
+
+            ) {
+
+                return {
+
+                    active: false,
+
+                    reason:
+                        "Returned Inside Opening Range"
+
+                };
+
+            }
+
+        }
+
+        //--------------------------------------------------
+        // Bearish ORB
+        //--------------------------------------------------
+
+        if (
+
+            result.openingRange.direction === "BEARISH"
+
+        ) {
+
+            if (
+
+                last.close > result.openingRange.low
+
+            ) {
+
+                return {
+
+                    active: false,
+
+                    reason:
+                        "Returned Inside Opening Range"
+
+                };
+
+            }
+
+        }
+
+        //--------------------------------------------------
+        // Signal still valid
+        //--------------------------------------------------
+
+        return {
+
+            active: true,
+
+            reason: ""
 
         };
 

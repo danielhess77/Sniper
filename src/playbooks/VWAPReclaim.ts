@@ -2,28 +2,19 @@
  * Sniper
  * VWAP Reclaim Playbook
  *
- * Version: 1.0
+ * Version: 2.0
  */
 
 import { Candle } from "../core/BDKClient.js";
-import { Playbook } from "./Playbook.js";
 import { ScoreEngine } from "../engines/ScoreEngine.js";
-
+import { TrendQualification } from "../core/TrendQualification.js";
+import { VWAPReclaimEngine } from "../engines/VWAPReclaimEngine.js";
+import { ConfirmationEngine } from "../engines/ConfirmationEngine.js";
+import { RiskEngine } from "../engines/RiskEngine.js";
 import {
-    TrendQualification
-} from "../core/TrendQualification.js";
-
-import {
-    VWAPReclaimEngine
-} from "../engines/VWAPReclaimEngine.js";
-
-import {
-    ConfirmationEngine
-} from "../engines/ConfirmationEngine.js";
-
-import {
-    RiskEngine
-} from "../engines/RiskEngine.js";
+    Playbook,
+    ValidationResult
+} from "./Playbook.js";
 
 type TrendResult =
     ReturnType<TrendQualification["evaluate"]>;
@@ -70,7 +61,8 @@ implements Playbook<VWAPReclaimResult> {
     private risk =
         new RiskEngine();
 
-    private score = new ScoreEngine();
+    private score =
+        new ScoreEngine();
 
     evaluate(
         candles: Candle[]
@@ -81,19 +73,23 @@ implements Playbook<VWAPReclaimResult> {
 
         const reclaim =
             this.reclaim.evaluate(
+
                 candles,
+
                 trend.vwap,
+
                 trend.direction
+
             );
 
         const confirmation =
-        this.confirmation.evaluate(
+            this.confirmation.evaluate(
 
-        candles,
+                candles,
 
-        reclaim.candleIndex
+                reclaim.candleIndex
 
-    );
+            );
 
         const defaultRisk: RiskResult = {
 
@@ -119,23 +115,24 @@ implements Playbook<VWAPReclaimResult> {
 
         ) {
 
-        return {
+            return {
 
-            playbook: "VWAP Reclaim",
+                playbook:
+                    "VWAP Reclaim",
 
-            qualified: false,
+                qualified: false,
 
-            trend,
+                trend,
 
-            reclaim,
+                reclaim,
 
-            confirmation,
+                confirmation,
 
-            risk: defaultRisk,
+                risk: defaultRisk,
 
-            score: 0
+                score: 0
 
-};
+            };
 
         }
 
@@ -150,31 +147,39 @@ implements Playbook<VWAPReclaimResult> {
 
             );
 
-        const score = this.score.evaluate({
+        const score =
+            this.score.evaluate({
 
-        trend: 30,
+                trend: 30,
 
-        playbook: 25,
+                playbook: 25,
 
-        confirmation: confirmation.score,
+                confirmation:
+                    confirmation.score,
 
-        risk: this.score.evaluateRisk(
-        risk.riskReward
-),
+                risk:
+                    this.score.evaluateRisk(
+                        risk.riskReward
+                    ),
 
-        entry: this.score.evaluateEntry(
+                entry:
+                    this.score.evaluateEntry(
 
-    candles.length - 1 - confirmation.candleIndex
+                        candles.length - 1 -
 
-),
+                        confirmation.candleIndex
 
-});
+                    )
+
+            });
 
         return {
 
-            playbook: "VWAP Reclaim",
+            playbook:
+                "VWAP Reclaim",
 
-            qualified: risk.valid,
+            qualified:
+                risk.valid,
 
             trend,
 
@@ -186,7 +191,102 @@ implements Playbook<VWAPReclaimResult> {
 
             score
 
-    };
+        };
+
+    }
+
+    validate(
+
+        candles: Candle[],
+
+        result: VWAPReclaimResult
+
+    ): ValidationResult {
+
+        if (!result.qualified) {
+
+            return {
+
+                active: false,
+
+                reason: "Not Qualified"
+
+            };
+
+        }
+
+        const last =
+            candles[candles.length - 1];
+
+        //--------------------------------------------------
+        // Bullish Reclaim
+        //--------------------------------------------------
+
+        if (
+
+            result.trend.direction === "BULLISH"
+
+        ) {
+
+            if (
+
+                last.close < result.trend.vwap
+
+            ) {
+
+                return {
+
+                    active: false,
+
+                    reason:
+                        "Lost VWAP"
+
+                };
+
+            }
+
+        }
+
+        //--------------------------------------------------
+        // Bearish Reclaim
+        //--------------------------------------------------
+
+        if (
+
+            result.trend.direction === "BEARISH"
+
+        ) {
+
+            if (
+
+                last.close > result.trend.vwap
+
+            ) {
+
+                return {
+
+                    active: false,
+
+                    reason:
+                        "Lost VWAP"
+
+                };
+
+            }
+
+        }
+
+        //--------------------------------------------------
+        // Still Active
+        //--------------------------------------------------
+
+        return {
+
+            active: true,
+
+            reason: ""
+
+        };
 
     }
 
