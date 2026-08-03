@@ -2,17 +2,21 @@
  * Sniper
  * Scanner
  *
- * Version: 2.0
+ * Version: 2.1
  */
 
 import { BDKClient } from "./BDKClient.js";
 import { Playbook } from "../playbooks/Playbook.js";
 import type { ScanCard } from "../types.js";
 import { normalizeScan } from "./ScanNormalizer.js";
+import { PremarketEngine } from "../engines/PremarketEngine.js";
 
 export type ScanResult = ScanCard;
 
 export class Scanner {
+
+    private premarket =
+        new PremarketEngine();
 
     constructor(
 
@@ -32,7 +36,8 @@ export class Scanner {
 
                 symbol,
 
-                candles: await this.bdk.getHistory(symbol)
+                candles:
+                    await this.bdk.getHistory(symbol)
 
             }))
 
@@ -55,20 +60,90 @@ export class Scanner {
 
             }
 
+            const premarket =
+                this.premarket.evaluate(
+                    history.candles
+                );
+
+            console.log("");
+
             console.log(
+                "========================================"
+            );
 
-                `${history.symbol} | ` +
+            console.log(
+                history.symbol
+            );
 
-                `${new Date(latest.datetime).toLocaleString(
+            console.log("");
+
+            console.log(
+                "Latest Candle :",
+                new Date(
+                    latest.datetime
+                ).toLocaleString(
                     "en-US",
                     {
                         timeZone:
                             "America/New_York"
                     }
-                )} | ` +
+                )
+            );
 
+            console.log(
+                "Current Price :",
                 latest.close
+            );
 
+            console.log("");
+
+            console.log(
+                "Premarket High :",
+                premarket.high
+            );
+
+            console.log(
+                "Premarket Low  :",
+                premarket.low
+            );
+
+            console.log(
+                "Midpoint       :",
+                premarket.midpoint
+            );
+
+            console.log(
+                "Range          :",
+                premarket.range
+            );
+
+            console.log(
+                "Bias           :",
+                premarket.bias
+            );
+
+            console.log(
+                "Above High     :",
+                premarket.aboveHigh
+            );
+
+            console.log(
+                "Below Low      :",
+                premarket.belowLow
+            );
+
+            console.log(
+                "Inside Range   :",
+                premarket.insideRange
+            );
+
+            console.log(
+                "Volume         :",
+                premarket.volume
+            );
+
+            console.log(
+                "========================================"
             );
 
         }
