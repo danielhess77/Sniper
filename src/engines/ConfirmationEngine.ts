@@ -1,14 +1,23 @@
 /**
- * ConfirmationEngine v2.0
+ * Sniper
+ * Confirmation Engine
+ *
+ * Version: 3.0
  *
  * Searches for confirmation beginning at the
  * supplied signal candle and continuing for
  * the next three candles.
  *
- * The strongest confirmation found wins.
+ * Owns its own Decision Trace.
  */
 
 import { Candle } from "../core/BDKClient.js";
+import {
+    DecisionStep
+} from "../types/DecisionTrace.js";
+import {
+    DecisionTraceEngine
+} from "./DecisionTraceEngine.js";
 
 export type ConfirmationPattern =
     | "BULLISH_ENGULFING"
@@ -44,6 +53,9 @@ export interface ConfirmationResult {
 }
 
 export class ConfirmationEngine {
+
+    private traceEngine =
+        new DecisionTraceEngine();
 
     private static readonly LOOKAHEAD = 3;
 
@@ -300,14 +312,8 @@ export class ConfirmationEngine {
         if (
 
             c1.close < c1.open &&
-            Math.abs(
-                c2.close -
-                c2.open
-            ) <
-            Math.abs(
-                c1.close -
-                c1.open
-            ) * 0.40 &&
+            Math.abs(c2.close - c2.open) <
+            Math.abs(c1.close - c1.open) * 0.40 &&
             c3.close > c3.open &&
             c3.close >
             (c1.open + c1.close) / 2
@@ -340,14 +346,8 @@ export class ConfirmationEngine {
         if (
 
             c1.close > c1.open &&
-            Math.abs(
-                c2.close -
-                c2.open
-            ) <
-            Math.abs(
-                c1.close -
-                c1.open
-            ) * 0.40 &&
+            Math.abs(c2.close - c2.open) <
+            Math.abs(c1.close - c1.open) * 0.40 &&
             c3.close <
             (c1.open + c1.close) / 2 &&
             c3.close < c3.open
@@ -380,8 +380,7 @@ export class ConfirmationEngine {
         if (
 
             range > 0 &&
-            body <=
-            range * 0.10
+            body <= range * 0.10
 
         ) {
 
@@ -410,8 +409,7 @@ export class ConfirmationEngine {
         if (
 
             range > 0 &&
-            body <=
-            range * 0.30 &&
+            body <= range * 0.30 &&
             upperShadow > body &&
             lowerShadow > body
 
@@ -440,6 +438,82 @@ export class ConfirmationEngine {
 
     }
 
+    //--------------------------------------------------
+
+       //--------------------------------------------------
+    // Decision Trace
+    //--------------------------------------------------
+
+    trace(
+        result: ConfirmationResult
+    ): DecisionStep[] {
+
+        this.traceEngine.reset();
+
+        //--------------------------------------------------
+        // Confirmation
+        //--------------------------------------------------
+
+        this.traceEngine.add(
+
+            "Confirmation",
+
+            result.confirmed,
+
+            result.pattern,
+
+            result.confirmed
+
+                ? `Pattern: ${result.pattern}`
+
+                : "No confirmation candle"
+
+        );
+
+        //--------------------------------------------------
+        // Quality
+        //--------------------------------------------------
+
+        this.traceEngine.addInfo(
+
+            "Quality",
+
+            result.quality,
+
+            `Score ${result.score}`
+
+        );
+
+        //--------------------------------------------------
+        // Timing
+        //--------------------------------------------------
+
+        this.traceEngine.addInfo(
+
+            "Timing",
+
+            result.confirmationOffset >= 0
+
+                ? `+${result.confirmationOffset} candle(s)`
+
+                : "None",
+
+            result.candleIndex >= 0
+
+                ? `Index ${result.candleIndex}`
+
+                : "No confirmation"
+
+        );
+
+        return this.traceEngine
+            .build()
+            .steps;
+
+    }
+
+    //--------------------------------------------------
+    // Empty Result
     //--------------------------------------------------
 
     private none(): ConfirmationResult {

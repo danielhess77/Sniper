@@ -1,5 +1,8 @@
 /**
- * RiskEngine v2.1
+ * Sniper
+ * Risk Engine
+ *
+ * Version: 3.0
  *
  * Calculates:
  * - Entry
@@ -7,16 +10,18 @@
  * - Target
  * - Risk / Reward
  *
- * Never rejects trades solely because
- * the Risk / Reward is below 2:1.
- *
- * Only invalid trade geometry causes
- * valid = false.
+ * Owns its own Decision Trace.
  */
 
 import { Candle } from "../core/BDKClient.js";
 import { TrendResult } from "../core/TrendQualification.js";
 import { ConfirmationResult } from "./ConfirmationEngine.js";
+import {
+    DecisionStep
+} from "../types/DecisionTrace.js";
+import {
+    DecisionTraceEngine
+} from "./DecisionTraceEngine.js";
 
 export interface RiskResult {
 
@@ -33,6 +38,9 @@ export interface RiskResult {
 }
 
 export class RiskEngine {
+
+    private traceEngine =
+        new DecisionTraceEngine();
 
     evaluate(
 
@@ -198,19 +206,7 @@ export class RiskEngine {
 
         ) {
 
-            return {
-
-                valid: false,
-
-                entry,
-
-                stop,
-
-                target,
-
-                riskReward: 0
-
-            };
+        return this.none();
 
         }
 
@@ -230,6 +226,96 @@ export class RiskEngine {
 
             riskReward:
                 reward / risk
+
+        };
+
+    }
+
+    //--------------------------------------------------
+    // Decision Trace
+    //--------------------------------------------------
+
+    trace(
+        result: RiskResult
+    ): DecisionStep[] {
+
+        this.traceEngine.reset();
+
+        //--------------------------------------------------
+        // Risk
+        //--------------------------------------------------
+
+        this.traceEngine.add(
+
+            "Risk",
+
+            result.valid,
+
+            `${result.riskReward.toFixed(2)}R`,
+
+            result.valid
+
+                ? `Entry ${result.entry.toFixed(2)} | Stop ${result.stop.toFixed(2)} | Target ${result.target.toFixed(2)}`
+
+                : "Invalid trade geometry"
+
+        );
+
+        //--------------------------------------------------
+        // Trade
+        //--------------------------------------------------
+
+        this.traceEngine.addInfo(
+
+            "Trade",
+
+            `${result.entry.toFixed(2)} → ${result.target.toFixed(2)}`,
+
+            `Stop ${result.stop.toFixed(2)}`
+
+        );
+
+        //--------------------------------------------------
+        // Risk / Reward
+        //--------------------------------------------------
+
+        this.traceEngine.addInfo(
+
+            "Risk / Reward",
+
+            `${result.riskReward.toFixed(2)}R`,
+
+            result.valid
+
+                ? "Trade geometry valid"
+
+                : "Trade geometry invalid"
+
+        );
+
+        return this.traceEngine
+            .build()
+            .steps;
+
+    }
+
+    //--------------------------------------------------
+    // Empty Result
+    //--------------------------------------------------
+
+    private none(): RiskResult {
+
+        return {
+
+            valid: false,
+
+            entry: 0,
+
+            stop: 0,
+
+            target: 0,
+
+            riskReward: 0
 
         };
 

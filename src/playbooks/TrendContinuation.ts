@@ -2,7 +2,9 @@
  * Sniper
  * Trend Continuation Playbook
  *
- * Version: 1.0
+ * Version: 2.0
+ *
+ * Decision Trace architecture.
  */
 
 import { Candle } from "../core/BDKClient.js";
@@ -11,6 +13,9 @@ import { PullbackEngine } from "../engines/PullbackEngine.js";
 import { ConfirmationEngine } from "../engines/ConfirmationEngine.js";
 import { RiskEngine } from "../engines/RiskEngine.js";
 import { ScoreEngine } from "../engines/ScoreEngine.js";
+import { DecisionTrace } from "../types/DecisionTrace.js";
+import { DecisionTraceEngine } from "../engines/DecisionTraceEngine.js";
+
 import {
     Playbook,
     ValidationResult
@@ -51,6 +56,9 @@ implements Playbook<TrendContinuationResult> {
 
     private score =
         new ScoreEngine();
+
+    private traceEngine =
+        new DecisionTraceEngine();
 
     evaluate(
         candles: Candle[]
@@ -152,7 +160,6 @@ implements Playbook<TrendContinuationResult> {
                         ? this.score.evaluateEntry(
 
                             candles.length - 1 -
-
                             confirmation.candleIndex
 
                         )
@@ -206,67 +213,41 @@ implements Playbook<TrendContinuationResult> {
         const last =
             candles[candles.length - 1];
 
-        //--------------------------------------------------
-        // Bullish Trend
-        //--------------------------------------------------
-
         if (
 
-            result.trend.direction === "BULLISH"
+            result.trend.direction === "BULLISH" &&
+
+            last.close < result.trend.ema20
 
         ) {
 
-            if (
+            return {
 
-                last.close < result.trend.ema20
+                active: false,
 
-            ) {
+                reason: "Lost EMA20"
 
-                return {
-
-                    active: false,
-
-                    reason:
-                        "Lost EMA20"
-
-                };
-
-            }
+            };
 
         }
-
-        //--------------------------------------------------
-        // Bearish Trend
-        //--------------------------------------------------
 
         if (
 
-            result.trend.direction === "BEARISH"
+            result.trend.direction === "BEARISH" &&
+
+            last.close > result.trend.ema20
 
         ) {
 
-            if (
+            return {
 
-                last.close > result.trend.ema20
+                active: false,
 
-            ) {
+                reason: "Lost EMA20"
 
-                return {
-
-                    active: false,
-
-                    reason:
-                        "Lost EMA20"
-
-                };
-
-            }
+            };
 
         }
-
-        //--------------------------------------------------
-        // Still Active
-        //--------------------------------------------------
 
         return {
 
@@ -275,6 +256,78 @@ implements Playbook<TrendContinuationResult> {
             reason: ""
 
         };
+
+    }
+
+           //--------------------------------------------------
+    // Decision Trace
+    //--------------------------------------------------
+
+    trace(
+        result: TrendContinuationResult
+    ): DecisionTrace {
+
+        this.traceEngine.reset();
+
+        //--------------------------------------------------
+        // Merge Engine Traces
+        //--------------------------------------------------
+
+        this.traceEngine.addSteps(
+
+            this.trend.trace(
+                result.trend
+            )
+
+        );
+
+        this.traceEngine.addSteps(
+
+            this.pullback.trace(
+                result.pullback
+            )
+
+        );
+
+        this.traceEngine.addSteps(
+
+            this.confirmation.trace(
+                result.confirmation
+            )
+
+        );
+
+        this.traceEngine.addSteps(
+
+            this.risk.trace(
+                result.risk
+            )
+
+        );
+
+        //--------------------------------------------------
+        // Overall Score
+        //--------------------------------------------------
+
+        this.traceEngine.addInfo(
+
+            "Score",
+
+            `${result.score}/100`,
+
+            result.qualified
+
+                ? "Qualified setup"
+
+                : "Setup not qualified"
+
+        );
+
+        //--------------------------------------------------
+        // Final Trace
+        //--------------------------------------------------
+
+        return this.traceEngine.build();
 
     }
 

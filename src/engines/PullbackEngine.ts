@@ -1,16 +1,23 @@
 /**
- * PullbackEngine v2.2
+ * Sniper
+ * Pullback Engine
+ *
+ * Version: 3.0
  *
  * Evaluates the quality of a pullback
  * during an established trend.
  *
- * Returns the pullback candle and its index
- * so downstream playbooks can evaluate
- * context-aware confirmation.
+ * Owns its own Decision Trace.
  */
 
 import { Candle } from "../core/BDKClient.js";
 import { TrendResult } from "../core/TrendQualification.js";
+import {
+    DecisionStep
+} from "../types/DecisionTrace.js";
+import {
+    DecisionTraceEngine
+} from "./DecisionTraceEngine.js";
 
 export interface PullbackResult {
 
@@ -27,20 +34,19 @@ export interface PullbackResult {
 
 export class PullbackEngine {
 
+    private traceEngine =
+        new DecisionTraceEngine();
+
     evaluate(
         candles: Candle[],
         trend: TrendResult
     ): PullbackResult {
 
-        const none: PullbackResult = {
+        const none = this.none();
 
-            level: "NONE",
-
-            candleIndex: -1,
-
-            pullbackCandle: null
-
-        };
+        //--------------------------------------------------
+        // Basic Requirements
+        //--------------------------------------------------
 
         if (
 
@@ -69,12 +75,16 @@ export class PullbackEngine {
 
         const highestHigh =
             Math.max(
-                ...recent.map(c => c.high)
+                ...recent.map(
+                    c => c.high
+                )
             );
 
         const lowestLow =
             Math.min(
-                ...recent.map(c => c.low)
+                ...recent.map(
+                    c => c.low
+                )
             );
 
         //--------------------------------------------------
@@ -210,6 +220,72 @@ export class PullbackEngine {
         }
 
         return none;
+
+    }
+
+       //--------------------------------------------------
+    // Decision Trace
+    //--------------------------------------------------
+
+    trace(
+        result: PullbackResult
+    ): DecisionStep[] {
+
+        this.traceEngine.reset();
+
+        this.traceEngine.add(
+
+            "Pullback",
+
+            result.level !== "NONE",
+
+            result.level,
+
+            result.level === "NONE"
+
+                ? "No valid pullback"
+
+                : `Pullback to ${result.level}`
+
+        );
+
+        this.traceEngine.addInfo(
+
+            "Signal Candle",
+
+            result.candleIndex >= 0
+                ? `${result.candleIndex}`
+                : "None",
+
+            result.pullbackCandle
+
+                ? `Close ${result.pullbackCandle.close.toFixed(2)}`
+
+                : "No pullback candle"
+
+        );
+
+        return this.traceEngine
+            .build()
+            .steps;
+
+    }
+
+    //--------------------------------------------------
+    // Empty Result
+    //--------------------------------------------------
+
+    private none(): PullbackResult {
+
+        return {
+
+            level: "NONE",
+
+            candleIndex: -1,
+
+            pullbackCandle: null
+
+        };
 
     }
 
