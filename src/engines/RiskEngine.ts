@@ -2,7 +2,7 @@
  * Sniper
  * Risk Engine
  *
- * Version: 3.0
+ * Version: 5.0
  *
  * Calculates:
  * - Entry
@@ -10,15 +10,22 @@
  * - Target
  * - Risk / Reward
  *
- * Owns its own Decision Trace.
+ * Target selection is delegated
+ * to TargetEngine.
  */
 
 import { Candle } from "../core/BDKClient.js";
 import { TrendResult } from "../core/TrendQualification.js";
 import { ConfirmationResult } from "./ConfirmationEngine.js";
 import {
+    TargetEngine,
+    TargetSource
+} from "./TargetEngine.js";
+
+import {
     DecisionStep
 } from "../types/DecisionTrace.js";
+
 import {
     DecisionTraceEngine
 } from "./DecisionTraceEngine.js";
@@ -35,12 +42,23 @@ export interface RiskResult {
 
     riskReward: number;
 
+    targetSource: TargetSource;
+
 }
 
 export class RiskEngine {
 
+    private static readonly MIN_RISK_REWARD = 1.75;
+
     private traceEngine =
         new DecisionTraceEngine();
+
+    private targetEngine =
+        new TargetEngine();
+
+    //--------------------------------------------------
+    // Trend Playbooks
+    //--------------------------------------------------
 
     evaluate(
 
@@ -52,10 +70,6 @@ export class RiskEngine {
 
     ): RiskResult {
 
-        //--------------------------------------------------
-        // Basic Validation
-        //--------------------------------------------------
-
         if (
 
             candles.length < 20 ||
@@ -66,19 +80,7 @@ export class RiskEngine {
 
         ) {
 
-            return {
-
-                valid: false,
-
-                entry: 0,
-
-                stop: 0,
-
-                target: 0,
-
-                riskReward: 0
-
-            };
+            return this.none();
 
         }
 
@@ -89,7 +91,7 @@ export class RiskEngine {
             signal.close;
 
         //--------------------------------------------------
-        // Structure Windows
+        // Stop Window
         //--------------------------------------------------
 
         const stopWindow =
@@ -104,24 +106,7 @@ export class RiskEngine {
 
             );
 
-        const targetWindow =
-            candles.slice(
-
-                Math.max(
-                    0,
-                    confirmation.candleIndex - 19
-                ),
-
-                confirmation.candleIndex + 1
-
-            );
-
         let stop = 0;
-        let target = 0;
-
-        //--------------------------------------------------
-        // Bullish
-        //--------------------------------------------------
 
         if (trend.direction === "BULLISH") {
 
@@ -135,19 +120,7 @@ export class RiskEngine {
 
             );
 
-            target = Math.max(
-
-                ...targetWindow.map(
-                    c => c.high
-                )
-
-            );
-
         }
-
-        //--------------------------------------------------
-        // Bearish
-        //--------------------------------------------------
 
         else {
 
@@ -161,89 +134,58 @@ export class RiskEngine {
 
             );
 
-            target = Math.min(
+        }
 
-                ...targetWindow.map(
-                    c => c.low
-                )
+        //--------------------------------------------------
+        // Target Engine
+        //--------------------------------------------------
+
+        const target =
+            this.targetEngine.evaluate(
+
+                candles,
+
+                trend,
+
+                entry
 
             );
 
-        }
+        if (!target.valid) {
 
-        //--------------------------------------------------
-        // Geometry Validation
-        //--------------------------------------------------
-
-        let risk = 0;
-        let reward = 0;
-
-        if (trend.direction === "BULLISH") {
-
-            risk =
-                entry - stop;
-
-            reward =
-                target - entry;
+            return this.none();
 
         }
 
-        else {
-
-            risk =
-                stop - entry;
-
-            reward =
-                entry - target;
-
-        }
-
-        if (
-
-            risk <= 0 ||
-
-            reward <= 0
-
-        ) {
-
-        return this.none();
-
-        }
-
-        //--------------------------------------------------
-        // Final Result
-        //--------------------------------------------------
-
-        return {
-
-            valid: true,
+        return this.evaluateTrade(
 
             entry,
 
             stop,
 
-            target,
+            target.target,
 
-            riskReward:
-                reward / risk
+            target.source
 
-        };
+        );
 
     }
 
-        //--------------------------------------------------
+    //--------------------------------------------------
     // Generic Trade Evaluation
     //--------------------------------------------------
 
-    evaluateTrade(
+        evaluateTrade(
 
         entry: number,
 
         stop: number,
 
-        target: number
+        target: number,
 
-    ): RiskResult {
+        targetSource: TargetSource = "NONE"
+
+        ): RiskResult {
 
         const risk =
             Math.abs(entry - stop);
@@ -251,36 +193,42 @@ export class RiskEngine {
         const reward =
             Math.abs(target - entry);
 
+        const riskReward =
+        reward / risk;
+
         if (
 
-            risk <= 0 ||
+        risk <= 0 ||
 
-            reward <= 0
+        reward <= 0 ||
 
-        ) {
+        riskReward < RiskEngine.MIN_RISK_REWARD
 
-            return this.none();
+) {
 
-        }
+    return this.none();
+
+}
 
         return {
 
-            valid: true,
+        valid: true,
 
-            entry,
+        entry,
 
-            stop,
+        stop,
 
-            target,
+        target,
 
-            riskReward:
-                reward / risk
+        riskReward,
 
-        };
+        targetSource
+
+    };
 
     }
 
-    //--------------------------------------------------
+        //--------------------------------------------------
     // Decision Trace
     //--------------------------------------------------
 
@@ -304,23 +252,70 @@ export class RiskEngine {
 
             result.valid
 
-                ? `Entry ${result.entry.toFixed(2)} | Stop ${result.stop.toFixed(2)} | Target ${result.target.toFixed(2)}`
+                ? "Trade geometry valid"
 
                 : "Invalid trade geometry"
 
         );
 
         //--------------------------------------------------
-        // Trade
+        // Entry
         //--------------------------------------------------
 
         this.traceEngine.addInfo(
 
-            "Trade",
+            "Entry",
 
-            `${result.entry.toFixed(2)} → ${result.target.toFixed(2)}`,
+            result.entry.toFixed(2),
 
-            `Stop ${result.stop.toFixed(2)}`
+            "Confirmation candle close"
+
+        );
+
+        //--------------------------------------------------
+        // Stop
+        //--------------------------------------------------
+
+        this.traceEngine.addInfo(
+
+            "Stop",
+
+            result.stop.toFixed(2),
+
+            "Structure stop"
+
+        );
+
+        //--------------------------------------------------
+        // Target
+        //--------------------------------------------------
+
+        this.traceEngine.addInfo(
+
+            "Target",
+
+            result.target.toFixed(2),
+
+            result.targetSource
+                .replace("_", " ")
+                .replace("_", " ")
+
+        );
+
+        //--------------------------------------------------
+        // Expected Reward
+        //--------------------------------------------------
+
+        this.traceEngine.addInfo(
+
+            "Reward",
+
+            `${Math.abs(
+                result.target -
+                result.entry
+            ).toFixed(2)}`,
+
+            "Expected move"
 
         );
 
@@ -334,11 +329,7 @@ export class RiskEngine {
 
             `${result.riskReward.toFixed(2)}R`,
 
-            result.valid
-
-                ? "Trade geometry valid"
-
-                : "Trade geometry invalid"
+            "Calculated"
 
         );
 
@@ -364,7 +355,9 @@ export class RiskEngine {
 
             target: 0,
 
-            riskReward: 0
+            riskReward: 0,
+
+            targetSource: "NONE"
 
         };
 

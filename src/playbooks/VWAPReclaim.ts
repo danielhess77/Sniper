@@ -11,7 +11,10 @@ import { Candle } from "../core/BDKClient.js";
 import { TrendQualification } from "../core/TrendQualification.js";
 import { VWAPReclaimEngine } from "../engines/VWAPReclaimEngine.js";
 import { ConfirmationEngine } from "../engines/ConfirmationEngine.js";
-import { RiskEngine } from "../engines/RiskEngine.js";
+import {
+    RiskEngine,
+    RiskResult
+} from "../engines/RiskEngine.js";
 import { ScoreEngine } from "../engines/ScoreEngine.js";
 import { DecisionTrace } from "../types/DecisionTrace.js";
 import { DecisionTraceEngine } from "../engines/DecisionTraceEngine.js";
@@ -87,19 +90,21 @@ implements Playbook<VWAPReclaimResult> {
 
             );
 
-        const defaultRisk = {
+        const defaultRisk: RiskResult = {
 
-            valid: false,
+        valid: false,
 
-            entry: 0,
+        entry: 0,
 
-            stop: 0,
+        stop: 0,
 
-            target: 0,
+        target: 0,
 
-            riskReward: 0
+        riskReward: 0,
 
-        };
+        targetSource: "NONE"
+
+};
 
         if (
 

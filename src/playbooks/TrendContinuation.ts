@@ -81,17 +81,19 @@ implements Playbook<TrendContinuationResult> {
 
         const defaultRisk = {
 
-            valid: false,
+        valid: false,
 
-            entry: 0,
+        entry: 0,
 
-            stop: 0,
+        stop: 0,
 
-            target: 0,
+        target: 0,
 
-            riskReward: 0
+        riskReward: 0,
 
-        };
+        targetSource: "NONE" as const
+
+};
 
         if (
 
