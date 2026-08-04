@@ -231,6 +231,55 @@ export class RiskEngine {
 
     }
 
+        //--------------------------------------------------
+    // Generic Trade Evaluation
+    //--------------------------------------------------
+
+    evaluateTrade(
+
+        entry: number,
+
+        stop: number,
+
+        target: number
+
+    ): RiskResult {
+
+        const risk =
+            Math.abs(entry - stop);
+
+        const reward =
+            Math.abs(target - entry);
+
+        if (
+
+            risk <= 0 ||
+
+            reward <= 0
+
+        ) {
+
+            return this.none();
+
+        }
+
+        return {
+
+            valid: true,
+
+            entry,
+
+            stop,
+
+            target,
+
+            riskReward:
+                reward / risk
+
+        };
+
+    }
+
     //--------------------------------------------------
     // Decision Trace
     //--------------------------------------------------

@@ -2,31 +2,24 @@
  * Sniper
  * VWAP Reclaim Playbook
  *
- * Version: 2.0
+ * Version: 3.0
+ *
+ * Decision Trace architecture.
  */
 
 import { Candle } from "../core/BDKClient.js";
-import { ScoreEngine } from "../engines/ScoreEngine.js";
 import { TrendQualification } from "../core/TrendQualification.js";
 import { VWAPReclaimEngine } from "../engines/VWAPReclaimEngine.js";
 import { ConfirmationEngine } from "../engines/ConfirmationEngine.js";
 import { RiskEngine } from "../engines/RiskEngine.js";
+import { ScoreEngine } from "../engines/ScoreEngine.js";
+import { DecisionTrace } from "../types/DecisionTrace.js";
+import { DecisionTraceEngine } from "../engines/DecisionTraceEngine.js";
+
 import {
     Playbook,
     ValidationResult
 } from "./Playbook.js";
-
-type TrendResult =
-    ReturnType<TrendQualification["evaluate"]>;
-
-type ReclaimResult =
-    ReturnType<VWAPReclaimEngine["evaluate"]>;
-
-type ConfirmationResult =
-    ReturnType<ConfirmationEngine["evaluate"]>;
-
-type RiskResult =
-    ReturnType<RiskEngine["evaluate"]>;
 
 export interface VWAPReclaimResult {
 
@@ -34,13 +27,13 @@ export interface VWAPReclaimResult {
 
     qualified: boolean;
 
-    trend: TrendResult;
+    trend: ReturnType<TrendQualification["evaluate"]>;
 
-    reclaim: ReclaimResult;
+    reclaim: ReturnType<VWAPReclaimEngine["evaluate"]>;
 
-    confirmation: ConfirmationResult;
+    confirmation: ReturnType<ConfirmationEngine["evaluate"]>;
 
-    risk: RiskResult;
+    risk: ReturnType<RiskEngine["evaluate"]>;
 
     score: number;
 
@@ -63,6 +56,9 @@ implements Playbook<VWAPReclaimResult> {
 
     private score =
         new ScoreEngine();
+
+    private traceEngine =
+        new DecisionTraceEngine();
 
     evaluate(
         candles: Candle[]
@@ -91,7 +87,7 @@ implements Playbook<VWAPReclaimResult> {
 
             );
 
-        const defaultRisk: RiskResult = {
+        const defaultRisk = {
 
             valid: false,
 
@@ -109,9 +105,7 @@ implements Playbook<VWAPReclaimResult> {
 
             trend.direction === "NONE" ||
 
-            !reclaim.reclaimed ||
-
-            !confirmation.confirmed
+            !reclaim.reclaimed
 
         ) {
 
@@ -137,15 +131,20 @@ implements Playbook<VWAPReclaimResult> {
         }
 
         const risk =
-            this.risk.evaluate(
 
-                candles,
+            confirmation.confirmed
 
-                trend,
+                ? this.risk.evaluate(
 
-                confirmation
+                    candles,
 
-            );
+                    trend,
+
+                    confirmation
+
+                )
+
+                : defaultRisk;
 
         const score =
             this.score.evaluate({
@@ -163,13 +162,18 @@ implements Playbook<VWAPReclaimResult> {
                     ),
 
                 entry:
-                    this.score.evaluateEntry(
 
-                        candles.length - 1 -
+                    confirmation.confirmed
 
-                        confirmation.candleIndex
+                        ? this.score.evaluateEntry(
 
-                    )
+                            candles.length - 1 -
+
+                            confirmation.candleIndex
+
+                        )
+
+                        : 0
 
             });
 
@@ -179,6 +183,7 @@ implements Playbook<VWAPReclaimResult> {
                 "VWAP Reclaim",
 
             qualified:
+                confirmation.confirmed &&
                 risk.valid,
 
             trend,
@@ -219,66 +224,48 @@ implements Playbook<VWAPReclaimResult> {
             candles[candles.length - 1];
 
         //--------------------------------------------------
-        // Bullish Reclaim
+        // Bullish
         //--------------------------------------------------
 
         if (
 
-            result.trend.direction === "BULLISH"
+            result.trend.direction === "BULLISH" &&
+
+            last.close < result.trend.vwap
 
         ) {
 
-            if (
+            return {
 
-                last.close < result.trend.vwap
+                active: false,
 
-            ) {
+                reason: "Lost VWAP"
 
-                return {
-
-                    active: false,
-
-                    reason:
-                        "Lost VWAP"
-
-                };
-
-            }
+            };
 
         }
 
         //--------------------------------------------------
-        // Bearish Reclaim
+        // Bearish
         //--------------------------------------------------
 
         if (
 
-            result.trend.direction === "BEARISH"
+            result.trend.direction === "BEARISH" &&
+
+            last.close > result.trend.vwap
 
         ) {
 
-            if (
+            return {
 
-                last.close > result.trend.vwap
+                active: false,
 
-            ) {
+                reason: "Lost VWAP"
 
-                return {
-
-                    active: false,
-
-                    reason:
-                        "Lost VWAP"
-
-                };
-
-            }
+            };
 
         }
-
-        //--------------------------------------------------
-        // Still Active
-        //--------------------------------------------------
 
         return {
 
@@ -287,6 +274,96 @@ implements Playbook<VWAPReclaimResult> {
             reason: ""
 
         };
+
+    }
+
+        //--------------------------------------------------
+    // Decision Trace
+    //--------------------------------------------------
+
+    trace(
+        result: VWAPReclaimResult
+    ): DecisionTrace {
+
+        this.traceEngine.reset();
+
+        //--------------------------------------------------
+        // Merge Engine Traces
+        //--------------------------------------------------
+
+        this.traceEngine.addSteps(
+
+            this.trend.trace(
+                result.trend
+            )
+
+        );
+
+        this.traceEngine.addSteps(
+
+            this.reclaim.trace(
+                result.reclaim
+            )
+
+        );
+
+        this.traceEngine.addSteps(
+
+            this.confirmation.trace(
+                result.confirmation
+            )
+
+        );
+
+        this.traceEngine.addSteps(
+
+            this.risk.trace(
+                result.risk
+            )
+
+        );
+
+        //--------------------------------------------------
+        // Overall Score
+        //--------------------------------------------------
+
+        this.traceEngine.addInfo(
+
+            "Score",
+
+            `${result.score}/100`,
+
+            result.qualified
+
+                ? "Qualified setup"
+
+                : "Setup not qualified"
+
+        );
+
+        //--------------------------------------------------
+        // Playbook
+        //--------------------------------------------------
+
+        this.traceEngine.addInfo(
+
+            "Playbook",
+
+            result.playbook,
+
+            result.qualified
+
+                ? "VWAP reclaim confirmed"
+
+                : "Requirements not fully met"
+
+        );
+
+        //--------------------------------------------------
+        // Final Trace
+        //--------------------------------------------------
+
+        return this.traceEngine.build();
 
     }
 

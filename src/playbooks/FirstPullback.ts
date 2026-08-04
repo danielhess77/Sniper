@@ -2,31 +2,24 @@
  * Sniper
  * First Pullback Playbook
  *
- * Version: 2.0
+ * Version: 3.0
+ *
+ * Decision Trace Architecture
  */
 
 import { Candle } from "../core/BDKClient.js";
-import { ScoreEngine } from "../engines/ScoreEngine.js";
 import { TrendQualification } from "../core/TrendQualification.js";
 import { PullbackEngine } from "../engines/PullbackEngine.js";
 import { ConfirmationEngine } from "../engines/ConfirmationEngine.js";
 import { RiskEngine } from "../engines/RiskEngine.js";
+import { ScoreEngine } from "../engines/ScoreEngine.js";
+import { DecisionTrace } from "../types/DecisionTrace.js";
+import { DecisionTraceEngine } from "../engines/DecisionTraceEngine.js";
+
 import {
     Playbook,
     ValidationResult
 } from "./Playbook.js";
-
-type TrendResult =
-    ReturnType<TrendQualification["evaluate"]>;
-
-type PullbackResult =
-    ReturnType<PullbackEngine["evaluate"]>;
-
-type ConfirmationResult =
-    ReturnType<ConfirmationEngine["evaluate"]>;
-
-type RiskResult =
-    ReturnType<RiskEngine["evaluate"]>;
 
 export interface FirstPullbackResult {
 
@@ -34,13 +27,17 @@ export interface FirstPullbackResult {
 
     qualified: boolean;
 
-    trend: TrendResult;
+    trend:
+        ReturnType<TrendQualification["evaluate"]>;
 
-    pullback: PullbackResult;
+    pullback:
+        ReturnType<PullbackEngine["evaluate"]>;
 
-    confirmation: ConfirmationResult;
+    confirmation:
+        ReturnType<ConfirmationEngine["evaluate"]>;
 
-    risk: RiskResult;
+    risk:
+        ReturnType<RiskEngine["evaluate"]>;
 
     score: number;
 
@@ -64,6 +61,9 @@ implements Playbook<FirstPullbackResult> {
     private score =
         new ScoreEngine();
 
+    private traceEngine =
+        new DecisionTraceEngine();
+
     evaluate(
         candles: Candle[]
     ): FirstPullbackResult {
@@ -83,19 +83,12 @@ implements Playbook<FirstPullbackResult> {
                 pullback.candleIndex
             );
 
-        const defaultRisk: RiskResult = {
-
-            valid: false,
-
-            entry: 0,
-
-            stop: 0,
-
-            target: 0,
-
-            riskReward: 0
-
-        };
+        const defaultRisk =
+            this.risk.evaluateTrade(
+                0,
+                0,
+                0
+            );
 
         if (
 
@@ -185,7 +178,9 @@ implements Playbook<FirstPullbackResult> {
                 "First Pullback",
 
             qualified:
-                confirmation.confirmed,
+
+                confirmation.confirmed &&
+                risk.valid,
 
             trend,
 
@@ -224,67 +219,39 @@ implements Playbook<FirstPullbackResult> {
         const last =
             candles[candles.length - 1];
 
-        //--------------------------------------------------
-        // Bullish Pullback
-        //--------------------------------------------------
-
         if (
 
-            result.trend.direction === "BULLISH"
+            result.trend.direction === "BULLISH" &&
+            last.close < result.trend.ema20
 
         ) {
 
-            if (
+            return {
 
-                last.close < result.trend.ema20
+                active: false,
 
-            ) {
+                reason: "Trend Failed"
 
-                return {
-
-                    active: false,
-
-                    reason:
-                        "Trend Failed"
-
-                };
-
-            }
+            };
 
         }
-
-        //--------------------------------------------------
-        // Bearish Pullback
-        //--------------------------------------------------
 
         if (
 
-            result.trend.direction === "BEARISH"
+            result.trend.direction === "BEARISH" &&
+            last.close > result.trend.ema20
 
         ) {
 
-            if (
+            return {
 
-                last.close > result.trend.ema20
+                active: false,
 
-            ) {
+                reason: "Trend Failed"
 
-                return {
-
-                    active: false,
-
-                    reason:
-                        "Trend Failed"
-
-                };
-
-            }
+            };
 
         }
-
-        //--------------------------------------------------
-        // Still Active
-        //--------------------------------------------------
 
         return {
 
@@ -293,6 +260,100 @@ implements Playbook<FirstPullbackResult> {
             reason: ""
 
         };
+
+    }
+
+        //--------------------------------------------------
+    // Decision Trace
+    //--------------------------------------------------
+
+    trace(
+        result: FirstPullbackResult
+    ): DecisionTrace {
+
+        this.traceEngine.reset();
+
+        //--------------------------------------------------
+        // Merge Engine Traces
+        //--------------------------------------------------
+
+        this.traceEngine.addSteps(
+
+            this.trend.trace(
+                result.trend
+            )
+
+        );
+
+        this.traceEngine.addSteps(
+
+            this.pullback.trace(
+                result.pullback
+            )
+
+        );
+
+        this.traceEngine.addSteps(
+
+            this.confirmation.trace(
+                result.confirmation
+            )
+
+        );
+
+        this.traceEngine.addSteps(
+
+            this.risk.trace(
+                result.risk
+            )
+
+        );
+
+        //--------------------------------------------------
+        // Overall Score
+        //--------------------------------------------------
+
+        this.traceEngine.addInfo(
+
+            "Score",
+
+            `${result.score}/100`,
+
+            result.qualified
+
+                ? "Qualified setup"
+
+                : "Setup not qualified"
+
+        );
+
+        //--------------------------------------------------
+        // Playbook
+        //--------------------------------------------------
+
+        this.traceEngine.addInfo(
+
+            "Playbook",
+
+            result.playbook,
+
+            result.pullback.level === "EMA9"
+
+                ? "First EMA9 Pullback"
+
+                : result.pullback.level === "EMA20"
+
+                    ? "First EMA20 Pullback"
+
+                    : "No qualifying pullback"
+
+        );
+
+        //--------------------------------------------------
+        // Final Trace
+        //--------------------------------------------------
+
+        return this.traceEngine.build();
 
     }
 

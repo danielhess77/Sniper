@@ -2,10 +2,20 @@
  * Sniper
  * VWAP Reclaim Engine
  *
- * Version: 1.1
+ * Version: 2.0
+ *
+ * Detects recent VWAP reclaims.
+ *
+ * Owns its own Decision Trace.
  */
 
 import { Candle } from "../core/BDKClient.js";
+import {
+    DecisionStep
+} from "../types/DecisionTrace.js";
+import {
+    DecisionTraceEngine
+} from "./DecisionTraceEngine.js";
 
 export interface VWAPReclaimResult {
 
@@ -24,6 +34,9 @@ export interface VWAPReclaimResult {
 
 export class VWAPReclaimEngine {
 
+    private traceEngine =
+        new DecisionTraceEngine();
+
     private static readonly LOOKBACK = 3;
 
     evaluate(
@@ -38,17 +51,7 @@ export class VWAPReclaimEngine {
 
         if (candles.length < 2) {
 
-            return {
-
-                reclaimed: false,
-
-                direction: "NONE",
-
-                candleIndex: -1,
-
-                reclaimCandle: null
-
-            };
+            return this.none();
 
         }
 
@@ -56,7 +59,8 @@ export class VWAPReclaimEngine {
 
             1,
 
-            candles.length - VWAPReclaimEngine.LOOKBACK
+            candles.length -
+            VWAPReclaimEngine.LOOKBACK
 
         );
 
@@ -70,13 +74,15 @@ export class VWAPReclaimEngine {
 
         ) {
 
-            const previous = candles[i - 1];
+            const previous =
+                candles[i - 1];
 
-            const current = candles[i];
+            const current =
+                candles[i];
 
-            //
+            //--------------------------------------------------
             // Bullish Reclaim
-            //
+            //--------------------------------------------------
 
             if (
 
@@ -102,9 +108,9 @@ export class VWAPReclaimEngine {
 
             }
 
-            //
+            //--------------------------------------------------
             // Bearish Reclaim
-            //
+            //--------------------------------------------------
 
             if (
 
@@ -131,6 +137,74 @@ export class VWAPReclaimEngine {
             }
 
         }
+
+        return this.none();
+
+    }
+
+    //--------------------------------------------------
+    // Decision Trace
+    //--------------------------------------------------
+
+    trace(
+        result: VWAPReclaimResult
+    ): DecisionStep[] {
+
+        this.traceEngine.reset();
+
+        //--------------------------------------------------
+        // Reclaim
+        //--------------------------------------------------
+
+        this.traceEngine.add(
+
+            "VWAP Reclaim",
+
+            result.reclaimed,
+
+            result.direction,
+
+            result.reclaimed
+
+                ? `${result.direction} reclaim confirmed`
+
+                : "No reclaim detected"
+
+        );
+
+        //--------------------------------------------------
+        // Signal Candle
+        //--------------------------------------------------
+
+        this.traceEngine.addInfo(
+
+            "Signal Candle",
+
+            result.candleIndex >= 0
+
+                ? `${result.candleIndex}`
+
+                : "None",
+
+            result.reclaimCandle
+
+                ? `Close ${result.reclaimCandle.close.toFixed(2)}`
+
+                : "No reclaim candle"
+
+        );
+
+        return this.traceEngine
+            .build()
+            .steps;
+
+    }
+
+    //--------------------------------------------------
+    // Empty Result
+    //--------------------------------------------------
+
+    private none(): VWAPReclaimResult {
 
         return {
 

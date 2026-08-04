@@ -1,14 +1,22 @@
 /**
- * Opening Range Breakout Engine
+ * Sniper
+ * Opening Range Engine
  *
- * Version: 1.1
+ * Version: 2.0
  *
- * Determines whether price has broken
- * the opening range.
+ * Detects Opening Range Breakouts.
+ *
+ * Owns its own Decision Trace.
  */
 
 import { Candle } from "../core/BDKClient.js";
 import { MarketSession } from "../utils/MarketSession.js";
+import {
+    DecisionStep
+} from "../types/DecisionTrace.js";
+import {
+    DecisionTraceEngine
+} from "./DecisionTraceEngine.js";
 
 export interface OpeningRangeResult {
 
@@ -31,6 +39,9 @@ export interface OpeningRangeResult {
 
 export class OpeningRangeEngine {
 
+    private traceEngine =
+        new DecisionTraceEngine();
+
     evaluate(
         candles: Candle[]
     ): OpeningRangeResult {
@@ -40,21 +51,7 @@ export class OpeningRangeEngine {
 
         if (openingRange.candles.length === 0) {
 
-            return {
-
-                direction: "NONE",
-
-                high: 0,
-
-                low: 0,
-
-                breakoutIndex: -1,
-
-                breakoutPrice: 0,
-
-                breakoutCandle: null
-
-            };
+            return this.none();
 
         }
 
@@ -68,15 +65,25 @@ export class OpeningRangeEngine {
 
         } = openingRange;
 
-        const startIndex = rangeCandles.length;
+        const startIndex =
+            rangeCandles.length;
 
         for (
+
             let i = startIndex;
+
             i < candles.length;
+
             i++
+
         ) {
 
-            const candle = candles[i];
+            const candle =
+                candles[i];
+
+            //--------------------------------------------------
+            // Bullish Breakout
+            //--------------------------------------------------
 
             if (candle.close > high) {
 
@@ -90,13 +97,19 @@ export class OpeningRangeEngine {
 
                     breakoutIndex: i,
 
-                    breakoutPrice: candle.close,
+                    breakoutPrice:
+                        candle.close,
 
-                    breakoutCandle: candle
+                    breakoutCandle:
+                        candle
 
                 };
 
             }
+
+            //--------------------------------------------------
+            // Bearish Breakout
+            //--------------------------------------------------
 
             if (candle.close < low) {
 
@@ -110,9 +123,11 @@ export class OpeningRangeEngine {
 
                     breakoutIndex: i,
 
-                    breakoutPrice: candle.close,
+                    breakoutPrice:
+                        candle.close,
 
-                    breakoutCandle: candle
+                    breakoutCandle:
+                        candle
 
                 };
 
@@ -127,6 +142,102 @@ export class OpeningRangeEngine {
             high,
 
             low,
+
+            breakoutIndex: -1,
+
+            breakoutPrice: 0,
+
+            breakoutCandle: null
+
+        };
+
+    }
+
+    //--------------------------------------------------
+    // Decision Trace
+    //--------------------------------------------------
+
+    trace(
+        result: OpeningRangeResult
+    ): DecisionStep[] {
+
+        this.traceEngine.reset();
+
+        //--------------------------------------------------
+        // Breakout
+        //--------------------------------------------------
+
+        this.traceEngine.add(
+
+            "Opening Range",
+
+            result.direction !== "NONE",
+
+            result.direction,
+
+            result.direction === "NONE"
+
+                ? "No breakout detected"
+
+                : `${result.direction} breakout confirmed`
+
+        );
+
+        //--------------------------------------------------
+        // Range
+        //--------------------------------------------------
+
+        this.traceEngine.addInfo(
+
+            "Range",
+
+            `${result.low.toFixed(2)} → ${result.high.toFixed(2)}`,
+
+            "Opening Range"
+
+        );
+
+        //--------------------------------------------------
+        // Breakout Candle
+        //--------------------------------------------------
+
+        this.traceEngine.addInfo(
+
+            "Breakout Candle",
+
+            result.breakoutIndex >= 0
+
+                ? `${result.breakoutIndex}`
+
+                : "None",
+
+            result.breakoutCandle
+
+                ? `Close ${result.breakoutCandle.close.toFixed(2)}`
+
+                : "No breakout candle"
+
+        );
+
+        return this.traceEngine
+            .build()
+            .steps;
+
+    }
+
+    //--------------------------------------------------
+    // Empty Result
+    //--------------------------------------------------
+
+    private none(): OpeningRangeResult {
+
+        return {
+
+            direction: "NONE",
+
+            high: 0,
+
+            low: 0,
 
             breakoutIndex: -1,
 

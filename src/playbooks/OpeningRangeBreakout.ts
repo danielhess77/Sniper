@@ -2,22 +2,23 @@
  * Sniper
  * Opening Range Breakout Playbook
  *
- * Version: 2.0
+ * Version: 3.0
+ *
+ * Decision Trace architecture.
  */
 
 import { Candle } from "../core/BDKClient.js";
 import { OpeningRangeEngine } from "../engines/OpeningRangeEngine.js";
 import { ConfirmationEngine } from "../engines/ConfirmationEngine.js";
+import { RiskEngine } from "../engines/RiskEngine.js";
 import { ScoreEngine } from "../engines/ScoreEngine.js";
-import { Playbook } from "./Playbook.js";
+import { DecisionTrace } from "../types/DecisionTrace.js";
+import { DecisionTraceEngine } from "../engines/DecisionTraceEngine.js";
 
-export interface ValidationResult {
-
-    active: boolean;
-
-    reason: string;
-
-}
+import {
+    Playbook,
+    ValidationResult
+} from "./Playbook.js";
 
 export interface OpeningRangeBreakoutResult {
 
@@ -31,19 +32,8 @@ export interface OpeningRangeBreakoutResult {
     confirmation:
         ReturnType<ConfirmationEngine["evaluate"]>;
 
-    trade: {
-
-        valid: boolean;
-
-        entry: number;
-
-        stop: number;
-
-        target: number;
-
-        riskReward: number;
-
-    };
+    trade:
+        ReturnType<RiskEngine["evaluateTrade"]>;
 
     score: number;
 
@@ -58,8 +48,14 @@ implements Playbook<OpeningRangeBreakoutResult> {
     private confirmation =
         new ConfirmationEngine();
 
+    private risk =
+        new RiskEngine();
+
     private score =
         new ScoreEngine();
+
+    private traceEngine =
+        new DecisionTraceEngine();
 
     evaluate(
         candles: Candle[]
@@ -70,28 +66,27 @@ implements Playbook<OpeningRangeBreakoutResult> {
 
         const confirmation =
             this.confirmation.evaluate(
+
                 candles,
+
                 openingRange.breakoutIndex
+
             );
 
-        let trade = {
+        let trade =
+            this.risk.evaluateTrade(
 
-            valid: false,
+                0,
 
-            entry: 0,
+                0,
 
-            stop: 0,
+                0
 
-            target: 0,
-
-            riskReward: 0
-
-        };
+            );
 
         if (
 
             openingRange.direction !== "NONE" &&
-            openingRange.breakoutIndex >= 0 &&
             confirmation.confirmed
 
         ) {
@@ -128,59 +123,48 @@ implements Playbook<OpeningRangeBreakoutResult> {
                         )
                     );
 
-            const risk =
-                Math.abs(entry - stop);
+            trade =
+                this.risk.evaluateTrade(
 
-            const reward =
-                Math.abs(target - entry);
+                    entry,
 
-            const riskReward =
+                    stop,
 
-                risk > 0
+                    target
 
-                    ? reward / risk
-
-                    : 0;
-
-            trade = {
-
-                valid: riskReward >= 2,
-
-                entry,
-
-                stop,
-
-                target,
-
-                riskReward
-
-            };
+                );
 
         }
 
-        const score = this.score.evaluate({
+        const score =
+            this.score.evaluate({
 
-            trend: 30,
+                trend: 30,
 
-            playbook: 25,
+                playbook: 25,
 
-            confirmation:
-                confirmation.score,
+                confirmation:
+                    confirmation.score,
 
-            risk:
-                this.score.evaluateRisk(
-                    trade.riskReward
-                ),
+                risk:
+                    this.score.evaluateRisk(
+                        trade.riskReward
+                    ),
 
-            entry:
-                this.score.evaluateEntry(
+                entry:
+                    confirmation.confirmed
 
-                    candles.length - 1 -
-                    confirmation.candleIndex
+                        ? this.score.evaluateEntry(
 
-                )
+                            candles.length - 1 -
 
-        });
+                            confirmation.candleIndex
+
+                        )
+
+                        : 0
+
+            });
 
         return {
 
@@ -188,7 +172,8 @@ implements Playbook<OpeningRangeBreakoutResult> {
                 "Opening Range Breakout",
 
             qualified:
-                trade.valid,
+                trade.valid &&
+                confirmation.confirmed,
 
             openingRange,
 
@@ -225,67 +210,41 @@ implements Playbook<OpeningRangeBreakoutResult> {
         const last =
             candles[candles.length - 1];
 
-        //--------------------------------------------------
-        // Bullish ORB
-        //--------------------------------------------------
-
         if (
 
-            result.openingRange.direction === "BULLISH"
+            result.openingRange.direction === "BULLISH" &&
+            last.close < result.openingRange.high
 
         ) {
 
-            if (
+            return {
 
-                last.close < result.openingRange.high
+                active: false,
 
-            ) {
+                reason:
+                    "Returned Inside Opening Range"
 
-                return {
-
-                    active: false,
-
-                    reason:
-                        "Returned Inside Opening Range"
-
-                };
-
-            }
+            };
 
         }
-
-        //--------------------------------------------------
-        // Bearish ORB
-        //--------------------------------------------------
 
         if (
 
-            result.openingRange.direction === "BEARISH"
+            result.openingRange.direction === "BEARISH" &&
+            last.close > result.openingRange.low
 
         ) {
 
-            if (
+            return {
 
-                last.close > result.openingRange.low
+                active: false,
 
-            ) {
+                reason:
+                    "Returned Inside Opening Range"
 
-                return {
-
-                    active: false,
-
-                    reason:
-                        "Returned Inside Opening Range"
-
-                };
-
-            }
+            };
 
         }
-
-        //--------------------------------------------------
-        // Signal still valid
-        //--------------------------------------------------
 
         return {
 
@@ -294,6 +253,88 @@ implements Playbook<OpeningRangeBreakoutResult> {
             reason: ""
 
         };
+
+    }
+
+        //--------------------------------------------------
+    // Decision Trace
+    //--------------------------------------------------
+
+    trace(
+        result: OpeningRangeBreakoutResult
+    ): DecisionTrace {
+
+        this.traceEngine.reset();
+
+        //--------------------------------------------------
+        // Merge Engine Traces
+        //--------------------------------------------------
+
+        this.traceEngine.addSteps(
+
+            this.openingRange.trace(
+                result.openingRange
+            )
+
+        );
+
+        this.traceEngine.addSteps(
+
+            this.confirmation.trace(
+                result.confirmation
+            )
+
+        );
+
+        this.traceEngine.addSteps(
+
+            this.risk.trace(
+                result.trade
+            )
+
+        );
+
+        //--------------------------------------------------
+        // Overall Score
+        //--------------------------------------------------
+
+        this.traceEngine.addInfo(
+
+            "Score",
+
+            `${result.score}/100`,
+
+            result.qualified
+
+                ? "Qualified setup"
+
+                : "Setup not qualified"
+
+        );
+
+        //--------------------------------------------------
+        // Playbook
+        //--------------------------------------------------
+
+        this.traceEngine.addInfo(
+
+            "Playbook",
+
+            result.playbook,
+
+            result.qualified
+
+                ? "Opening Range Breakout confirmed"
+
+                : "Requirements not fully met"
+
+        );
+
+        //--------------------------------------------------
+        // Final Trace
+        //--------------------------------------------------
+
+        return this.traceEngine.build();
 
     }
 
