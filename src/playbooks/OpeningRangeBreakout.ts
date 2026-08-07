@@ -2,9 +2,10 @@
  * Sniper
  * Opening Range Breakout Playbook
  *
- * Version: 3.0
+ * Version: 3.1
  *
  * Decision Trace architecture.
+ * Target now uses measured move of Opening Range height.
  */
 
 import { Candle } from "../core/BDKClient.js";
@@ -102,26 +103,17 @@ implements Playbook<OpeningRangeBreakoutResult> {
 
                     : openingRange.high;
 
-            const breakoutCandles =
-                candles.slice(
-                    openingRange.breakoutIndex
-                );
+            // Measured Move = height of the Opening Range
+            const rangeHeight =
+                openingRange.high - openingRange.low;
 
             const target =
 
                 openingRange.direction === "BULLISH"
 
-                    ? Math.max(
-                        ...breakoutCandles.map(
-                            c => c.high
-                        )
-                    )
+                    ? entry + rangeHeight
 
-                    : Math.min(
-                        ...breakoutCandles.map(
-                            c => c.low
-                        )
-                    );
+                    : entry - rangeHeight;
 
             trade =
                 this.risk.evaluateTrade(

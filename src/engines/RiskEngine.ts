@@ -2,12 +2,12 @@
  * Sniper
  * Risk Engine
  *
- * Version: 3.0
+ * Version: 3.1
  *
  * Calculates:
  * - Entry
- * - Stop
- * - Target
+ * - Stop (structure)
+ * - Target (Measured Move)
  * - Risk / Reward
  *
  * Owns its own Decision Trace.
@@ -42,19 +42,22 @@ export class RiskEngine {
     private traceEngine =
         new DecisionTraceEngine();
 
+    //--------------------------------------------------
+    // Structure-based stop + Measured Move target
+    // Used by FirstPullback, TrendContinuation, VWAPReclaim
+    //--------------------------------------------------
+
     evaluate(
 
         candles: Candle[],
 
         trend: TrendResult,
 
-        confirmation: ConfirmationResult
+        confirmation: ConfirmationResult,
+
+        measuredMoveSize?: number
 
     ): RiskResult {
-
-        //--------------------------------------------------
-        // Basic Validation
-        //--------------------------------------------------
 
         if (
 
@@ -66,19 +69,7 @@ export class RiskEngine {
 
         ) {
 
-            return {
-
-                valid: false,
-
-                entry: 0,
-
-                stop: 0,
-
-                target: 0,
-
-                riskReward: 0
-
-            };
+            return this.none();
 
         }
 
@@ -89,7 +80,7 @@ export class RiskEngine {
             signal.close;
 
         //--------------------------------------------------
-        // Structure Windows
+        // Structure Stop (last 5 candles including signal)
         //--------------------------------------------------
 
         const stopWindow =
@@ -104,135 +95,69 @@ export class RiskEngine {
 
             );
 
-        const targetWindow =
-            candles.slice(
-
-                Math.max(
-                    0,
-                    confirmation.candleIndex - 19
-                ),
-
-                confirmation.candleIndex + 1
-
-            );
-
         let stop = 0;
-        let target = 0;
-
-        //--------------------------------------------------
-        // Bullish
-        //--------------------------------------------------
 
         if (trend.direction === "BULLISH") {
 
             stop = Math.min(
-
                 signal.low,
-
-                ...stopWindow.map(
-                    c => c.low
-                )
-
+                ...stopWindow.map(c => c.low)
             );
 
-            target = Math.max(
-
-                ...targetWindow.map(
-                    c => c.high
-                )
-
-            );
-
-        }
-
-        //--------------------------------------------------
-        // Bearish
-        //--------------------------------------------------
-
-        else {
+        } else {
 
             stop = Math.max(
-
                 signal.high,
-
-                ...stopWindow.map(
-                    c => c.high
-                )
-
-            );
-
-            target = Math.min(
-
-                ...targetWindow.map(
-                    c => c.low
-                )
-
+                ...stopWindow.map(c => c.high)
             );
 
         }
 
         //--------------------------------------------------
-        // Geometry Validation
+        // Measured Move Target
         //--------------------------------------------------
 
-        let risk = 0;
-        let reward = 0;
+        // If caller did not supply a measured-move size,
+        // fall back to a reasonable impulse proxy (12 candles before signal)
+        let moveSize = measuredMoveSize;
+
+        if (moveSize === undefined || moveSize <= 0) {
+
+            const impulseWindow =
+                candles.slice(
+
+                    Math.max(0, confirmation.candleIndex - 12),
+
+                    confirmation.candleIndex
+
+                );
+
+            if (impulseWindow.length < 3) {
+                return this.none();
+            }
+
+            const impulseHigh = Math.max(...impulseWindow.map(c => c.high));
+            const impulseLow  = Math.min(...impulseWindow.map(c => c.low));
+            moveSize = impulseHigh - impulseLow;
+        }
+
+        if (moveSize <= 0) {
+            return this.none();
+        }
+
+        let target = 0;
 
         if (trend.direction === "BULLISH") {
-
-            risk =
-                entry - stop;
-
-            reward =
-                target - entry;
-
+            target = entry + moveSize;
+        } else {
+            target = entry - moveSize;
         }
 
-        else {
-
-            risk =
-                stop - entry;
-
-            reward =
-                entry - target;
-
-        }
-
-        if (
-
-            risk <= 0 ||
-
-            reward <= 0
-
-        ) {
-
-        return this.none();
-
-        }
-
-        //--------------------------------------------------
-        // Final Result
-        //--------------------------------------------------
-
-        return {
-
-            valid: true,
-
-            entry,
-
-            stop,
-
-            target,
-
-            riskReward:
-                reward / risk
-
-        };
-
+        return this.evaluateTrade(entry, stop, target);
     }
 
-        //--------------------------------------------------
-    // Generic Trade Evaluation
+    //--------------------------------------------------
+    // Generic Trade Evaluation (used by all playbooks)
     //--------------------------------------------------
 
     evaluateTrade(
@@ -290,10 +215,6 @@ export class RiskEngine {
 
         this.traceEngine.reset();
 
-        //--------------------------------------------------
-        // Risk
-        //--------------------------------------------------
-
         this.traceEngine.add(
 
             "Risk",
@@ -310,10 +231,6 @@ export class RiskEngine {
 
         );
 
-        //--------------------------------------------------
-        // Trade
-        //--------------------------------------------------
-
         this.traceEngine.addInfo(
 
             "Trade",
@@ -324,10 +241,6 @@ export class RiskEngine {
 
         );
 
-        //--------------------------------------------------
-        // Risk / Reward
-        //--------------------------------------------------
-
         this.traceEngine.addInfo(
 
             "Risk / Reward",
@@ -336,7 +249,7 @@ export class RiskEngine {
 
             result.valid
 
-                ? "Trade geometry valid"
+                ? "Trade geometry valid (Measured Move)"
 
                 : "Trade geometry invalid"
 
@@ -347,10 +260,6 @@ export class RiskEngine {
             .steps;
 
     }
-
-    //--------------------------------------------------
-    // Empty Result
-    //--------------------------------------------------
 
     private none(): RiskResult {
 
