@@ -2,7 +2,7 @@
  * Sniper
  * Risk Engine
  *
- * Version: 3.2
+ * Version: 3.3
  *
  * Calculates:
  * - Entry
@@ -10,7 +10,9 @@
  * - Target (Measured Move)
  * - Risk / Reward
  *
- * Enforces a hard minimum of 1.5R.
+ * Enforces:
+ * - Minimum 1.5R
+ * - Minimum risk distance ($0.50 or 0.15% of price, whichever is larger)
  *
  * Owns its own Decision Trace.
  */
@@ -42,6 +44,12 @@ export interface RiskResult {
 export class RiskEngine {
 
     private static readonly MIN_RISK_REWARD = 1.5;
+
+    // Absolute floor — kills pure noise stops
+    private static readonly MIN_RISK_DOLLARS = 0.50;
+
+    // Percentage floor — scales with higher-priced stocks
+    private static readonly MIN_RISK_PCT = 0.0015; // 0.15%
 
     private traceEngine =
         new DecisionTraceEngine();
@@ -162,7 +170,7 @@ export class RiskEngine {
 
     //--------------------------------------------------
     // Generic Trade Evaluation (used by all playbooks)
-    // Enforces minimum 1.5R
+    // Enforces minimum 1.5R + minimum risk distance
     //--------------------------------------------------
 
     evaluateTrade(
@@ -188,6 +196,19 @@ export class RiskEngine {
             reward <= 0
 
         ) {
+
+            return this.none();
+
+        }
+
+        // Minimum risk distance: $0.50 or 0.15% of price (whichever is larger)
+        const minRisk =
+            Math.max(
+                RiskEngine.MIN_RISK_DOLLARS,
+                entry * RiskEngine.MIN_RISK_PCT
+            );
+
+        if (risk < minRisk) {
 
             return this.none();
 
@@ -241,7 +262,7 @@ export class RiskEngine {
 
                 ? `Entry ${result.entry.toFixed(2)} | Stop ${result.stop.toFixed(2)} | Target ${result.target.toFixed(2)}`
 
-                : `Invalid (min ${RiskEngine.MIN_RISK_REWARD}R required)`
+                : `Invalid (min ${RiskEngine.MIN_RISK_REWARD}R and min risk distance required)`
 
         );
 
@@ -263,9 +284,9 @@ export class RiskEngine {
 
             result.valid
 
-                ? "Trade geometry valid (Measured Move ≥ 1.5R)"
+                ? "Trade geometry valid (Measured Move ≥ 1.5R, risk ≥ floor)"
 
-                : `Below minimum ${RiskEngine.MIN_RISK_REWARD}R`
+                : `Failed min ${RiskEngine.MIN_RISK_REWARD}R or min risk distance`
 
         );
 
