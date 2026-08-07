@@ -2,7 +2,7 @@
  * Sniper
  * Trend Continuation Playbook
  *
- * Version: 2.0
+ * Version: 2.1
  *
  * Decision Trace architecture.
  */
@@ -174,7 +174,8 @@ implements Playbook<TrendContinuationResult> {
                 "Trend Continuation",
 
             qualified:
-                confirmation.confirmed,
+                confirmation.confirmed &&
+                risk.valid,
 
             trend,
 
