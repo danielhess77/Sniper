@@ -2,13 +2,15 @@
  * Sniper
  * Risk Engine
  *
- * Version: 3.1
+ * Version: 3.2
  *
  * Calculates:
  * - Entry
  * - Stop (structure)
  * - Target (Measured Move)
  * - Risk / Reward
+ *
+ * Enforces a hard minimum of 1.5R.
  *
  * Owns its own Decision Trace.
  */
@@ -38,6 +40,8 @@ export interface RiskResult {
 }
 
 export class RiskEngine {
+
+    private static readonly MIN_RISK_REWARD = 1.5;
 
     private traceEngine =
         new DecisionTraceEngine();
@@ -158,6 +162,7 @@ export class RiskEngine {
 
     //--------------------------------------------------
     // Generic Trade Evaluation (used by all playbooks)
+    // Enforces minimum 1.5R
     //--------------------------------------------------
 
     evaluateTrade(
@@ -188,6 +193,16 @@ export class RiskEngine {
 
         }
 
+        const riskReward =
+            reward / risk;
+
+        // Hard minimum R:R filter
+        if (riskReward < RiskEngine.MIN_RISK_REWARD) {
+
+            return this.none();
+
+        }
+
         return {
 
             valid: true,
@@ -198,8 +213,7 @@ export class RiskEngine {
 
             target,
 
-            riskReward:
-                reward / risk
+            riskReward
 
         };
 
@@ -227,7 +241,7 @@ export class RiskEngine {
 
                 ? `Entry ${result.entry.toFixed(2)} | Stop ${result.stop.toFixed(2)} | Target ${result.target.toFixed(2)}`
 
-                : "Invalid trade geometry"
+                : `Invalid (min ${RiskEngine.MIN_RISK_REWARD}R required)`
 
         );
 
@@ -249,9 +263,9 @@ export class RiskEngine {
 
             result.valid
 
-                ? "Trade geometry valid (Measured Move)"
+                ? "Trade geometry valid (Measured Move ≥ 1.5R)"
 
-                : "Trade geometry invalid"
+                : `Below minimum ${RiskEngine.MIN_RISK_REWARD}R`
 
         );
 
