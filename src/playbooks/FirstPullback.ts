@@ -178,9 +178,7 @@ implements Playbook<FirstPullbackResult> {
                 "First Pullback",
 
             qualified:
-
-                confirmation.confirmed &&
-                risk.valid,
+            risk.valid,
 
             trend,
 

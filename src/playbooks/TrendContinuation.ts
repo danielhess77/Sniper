@@ -176,7 +176,7 @@ implements Playbook<TrendContinuationResult> {
                 "Trend Continuation",
 
             qualified:
-                confirmation.confirmed,
+            risk.valid,
 
             trend,
 

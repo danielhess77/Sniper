@@ -188,8 +188,7 @@ implements Playbook<VWAPReclaimResult> {
                 "VWAP Reclaim",
 
             qualified:
-                confirmation.confirmed &&
-                risk.valid,
+            risk.valid,
 
             trend,
 
