@@ -2,7 +2,7 @@
  * Sniper
  * Risk Engine
  *
- * Version: 3.3
+ * Version: 3.4
  *
  * Calculates:
  * - Entry
@@ -11,8 +11,8 @@
  * - Risk / Reward
  *
  * Enforces:
- * - Minimum 1.5R
- * - Minimum risk distance ($0.50 or 0.15% of price, whichever is larger)
+ * - Minimum R:R (default 1.5, overridable for swing horizons)
+ * - Minimum risk distance (default $0.50 or 0.15%, overridable)
  *
  * Owns its own Decision Trace.
  */
@@ -41,14 +41,22 @@ export interface RiskResult {
 
 }
 
+export interface RiskLimits {
+
+    minRiskReward?: number;
+
+    minRiskDollars?: number;
+
+    minRiskPct?: number;
+
+}
+
 export class RiskEngine {
 
     private static readonly MIN_RISK_REWARD = 1.5;
 
-    // Absolute floor — kills pure noise stops
     private static readonly MIN_RISK_DOLLARS = 0.50;
 
-    // Percentage floor — scales with higher-priced stocks
     private static readonly MIN_RISK_PCT = 0.0015; // 0.15%
 
     private traceEngine =
@@ -91,10 +99,6 @@ export class RiskEngine {
         const entry =
             signal.close;
 
-        //--------------------------------------------------
-        // Structure Stop (last 5 candles including signal)
-        //--------------------------------------------------
-
         const stopWindow =
             candles.slice(
 
@@ -125,12 +129,6 @@ export class RiskEngine {
 
         }
 
-        //--------------------------------------------------
-        // Measured Move Target
-        //--------------------------------------------------
-
-        // If caller did not supply a measured-move size,
-        // fall back to a reasonable impulse proxy (12 candles before signal)
         let moveSize = measuredMoveSize;
 
         if (moveSize === undefined || moveSize <= 0) {
@@ -169,8 +167,7 @@ export class RiskEngine {
     }
 
     //--------------------------------------------------
-    // Generic Trade Evaluation (used by all playbooks)
-    // Enforces minimum 1.5R + minimum risk distance
+    // Generic Trade Evaluation (0DTE + Swing)
     //--------------------------------------------------
 
     evaluateTrade(
@@ -179,9 +176,20 @@ export class RiskEngine {
 
         stop: number,
 
-        target: number
+        target: number,
+
+        limits?: RiskLimits
 
     ): RiskResult {
+
+        const minRR =
+            limits?.minRiskReward ?? RiskEngine.MIN_RISK_REWARD;
+
+        const minRiskDollars =
+            limits?.minRiskDollars ?? RiskEngine.MIN_RISK_DOLLARS;
+
+        const minRiskPct =
+            limits?.minRiskPct ?? RiskEngine.MIN_RISK_PCT;
 
         const risk =
             Math.abs(entry - stop);
@@ -201,11 +209,10 @@ export class RiskEngine {
 
         }
 
-        // Minimum risk distance: $0.50 or 0.15% of price (whichever is larger)
         const minRisk =
             Math.max(
-                RiskEngine.MIN_RISK_DOLLARS,
-                entry * RiskEngine.MIN_RISK_PCT
+                minRiskDollars,
+                entry * minRiskPct
             );
 
         if (risk < minRisk) {
@@ -217,8 +224,7 @@ export class RiskEngine {
         const riskReward =
             reward / risk;
 
-        // Hard minimum R:R filter
-        if (riskReward < RiskEngine.MIN_RISK_REWARD) {
+        if (riskReward < minRR) {
 
             return this.none();
 
@@ -262,7 +268,7 @@ export class RiskEngine {
 
                 ? `Entry ${result.entry.toFixed(2)} | Stop ${result.stop.toFixed(2)} | Target ${result.target.toFixed(2)}`
 
-                : `Invalid (min ${RiskEngine.MIN_RISK_REWARD}R and min risk distance required)`
+                : "Invalid (min R:R and min risk distance required)"
 
         );
 
@@ -284,9 +290,9 @@ export class RiskEngine {
 
             result.valid
 
-                ? "Trade geometry valid (Measured Move ≥ 1.5R, risk ≥ floor)"
+                ? "Trade geometry valid"
 
-                : `Failed min ${RiskEngine.MIN_RISK_REWARD}R or min risk distance`
+                : "Failed min R:R or min risk distance"
 
         );
 
