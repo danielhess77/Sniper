@@ -1,7 +1,7 @@
 /**
- * Sniper Server v2.1
+ * Sniper Server v2.2
  *
- * Express API for the Sniper scanner.
+ * Express API for the Sniper scanner + RVOL panel.
  */
 
 import express from "express";
@@ -9,6 +9,7 @@ import cors from "cors";
 
 import { BDKClient } from "../core/BDKClient.js";
 import { Scanner } from "../core/Scanner.js";
+import { RvolEngine } from "../engines/RvolEngine.js";
 
 import { WATCHLIST } from "../config/Watchlist.js";
 
@@ -21,9 +22,11 @@ const app = express();
 
 app.use(cors());
 
+const bdk = new BDKClient();
+
 const scanner = new Scanner(
 
-    new BDKClient(),
+    bdk,
 
     [
 
@@ -38,6 +41,8 @@ const scanner = new Scanner(
     ]
 
 );
+
+const rvolEngine = new RvolEngine(bdk);
 
 //--------------------------------------------------
 // Health Check
@@ -139,6 +144,48 @@ app.get(
 );
 
 //--------------------------------------------------
+// Relative Volume Leaderboard
+// 1 batch quotes call, cached 90s
+//--------------------------------------------------
+
+app.get(
+
+    "/rvol",
+
+    async (_, res) => {
+
+        try {
+
+            const result =
+                await rvolEngine.evaluate(WATCHLIST);
+
+            res.json(result);
+
+        }
+
+        catch (error) {
+
+            console.error(error);
+
+            res.status(500).json({
+
+                success: false,
+
+                timestamp:
+                    new Date().toISOString(),
+
+                error:
+                    "RVOL request failed"
+
+            });
+
+        }
+
+    }
+
+);
+
+//--------------------------------------------------
 // Start Server
 //--------------------------------------------------
 
@@ -154,7 +201,7 @@ app.listen(
 
         console.log("====================================");
 
-        console.log("        SNIPER API v2.1");
+        console.log("        SNIPER API v2.2");
 
         console.log("====================================");
 
@@ -169,6 +216,12 @@ app.listen(
         console.log(
 
             `Scan   : http://localhost:${PORT}/scan`
+
+        );
+
+        console.log(
+
+            `RVOL   : http://localhost:${PORT}/rvol`
 
         );
 

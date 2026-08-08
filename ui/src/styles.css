@@ -161,6 +161,48 @@ body {
 
 }
 
+.rvolPanel {
+
+    background: var(--panel);
+
+    border: 1px solid var(--border);
+
+    border-radius: var(--radius);
+
+    overflow: hidden;
+
+    margin-bottom: 24px;
+
+}
+
+.rvolEmpty {
+
+    padding: 20px;
+
+    color: var(--muted);
+
+}
+
+.rvolValue {
+
+    color: var(--yellow);
+
+    font-weight: 700;
+
+}
+
+.pos {
+
+    color: var(--green);
+
+}
+
+.neg {
+
+    color: var(--red);
+
+}
+
 .content {
 
     display: grid;

@@ -1,8 +1,26 @@
 import { useEffect, useMemo, useState } from "react";
 import "./styles.css";
 
-import { getScan } from "./api";
-import type { ScanCard } from "./api";
+import { getScan, getRvol } from "./api";
+import type { ScanCard, RvolCard } from "./api";
+
+function formatVolume(n: number): string {
+
+    if (n >= 1_000_000) {
+
+        return `${(n / 1_000_000).toFixed(1)}M`;
+
+    }
+
+    if (n >= 1_000) {
+
+        return `${(n / 1_000).toFixed(0)}K`;
+
+    }
+
+    return String(n);
+
+}
 
 function App() {
 
@@ -29,32 +47,47 @@ function App() {
     const [selected, setSelected] =
         useState<ScanCard | null>(null);
 
+    const [rvolLive, setRvolLive] =
+        useState<RvolCard[]>([]);
+
+    const [rvolOpening30, setRvolOpening30] =
+        useState<RvolCard[] | null>(null);
+
+    const [afterOpen30, setAfterOpen30] =
+        useState(false);
+
     async function refresh() {
 
         try {
 
-            const response =
-                await getScan();
+            const [scanResponse, rvolResponse] =
+                await Promise.all([
 
-            setResults(response.results);
+                    getScan(),
+
+                    getRvol().catch(() => null)
+
+                ]);
+
+            setResults(scanResponse.results);
 
             setWatchlist(
-                response.watchlist
+                scanResponse.watchlist
             );
 
             setPlaybooks(
-                response.playbooks
+                scanResponse.playbooks
             );
 
             setQualified(
-                response.qualified
+                scanResponse.qualified
             );
 
             setLastScan(
 
                 new Date(
 
-                    response.timestamp
+                    scanResponse.timestamp
 
                 ).toLocaleTimeString(
 
@@ -76,16 +109,26 @@ function App() {
 
             if (
 
-                response.results.length &&
+                scanResponse.results.length &&
                 !selected
 
             ) {
 
                 setSelected(
 
-                    response.results[0]
+                    scanResponse.results[0]
 
                 );
+
+            }
+
+            if (rvolResponse?.success) {
+
+                setRvolLive(rvolResponse.live);
+
+                setRvolOpening30(rvolResponse.opening30);
+
+                setAfterOpen30(rvolResponse.afterOpen30);
 
             }
 
@@ -140,6 +183,20 @@ function App() {
         return results[0].score;
 
     }, [results]);
+
+    const rvolRows =
+        afterOpen30 && rvolOpening30 && rvolOpening30.length
+
+            ? rvolOpening30
+
+            : rvolLive;
+
+    const rvolTitle =
+        afterOpen30 && rvolOpening30
+
+            ? "Highest RVOL (10:00 ET Snapshot)"
+
+            : "Highest RVOL (Live)";
 
     return (
 
@@ -312,6 +369,101 @@ function App() {
                 )
 
             }
+
+            <section className="rvolPanel">
+
+                <div className="panelHeader">
+
+                    {rvolTitle}
+
+                </div>
+
+                {rvolRows.length === 0 ? (
+
+                    <div className="rvolEmpty">
+
+                        No RVOL data yet.
+
+                    </div>
+
+                ) : (
+
+                    <table>
+
+                        <thead>
+
+                            <tr>
+
+                                <th>#</th>
+
+                                <th>Symbol</th>
+
+                                <th>RVOL</th>
+
+                                <th>Volume</th>
+
+                                <th>Avg 10D</th>
+
+                                <th>Last</th>
+
+                                <th>Change</th>
+
+                            </tr>
+
+                        </thead>
+
+                        <tbody>
+
+                            {rvolRows.map((row, index) => (
+
+                                <tr key={row.symbol}>
+
+                                    <td>{index + 1}</td>
+
+                                    <td>{row.symbol}</td>
+
+                                    <td className="rvolValue">
+
+                                        {row.rvol.toFixed(2)}x
+
+                                    </td>
+
+                                    <td>{formatVolume(row.totalVolume)}</td>
+
+                                    <td>{formatVolume(row.avg10DaysVolume)}</td>
+
+                                    <td>{row.lastPrice.toFixed(2)}</td>
+
+                                    <td
+                                        className={
+
+                                            row.netPercentChange >= 0
+
+                                                ? "pos"
+
+                                                : "neg"
+
+                                        }
+
+                                    >
+
+                                        {row.netPercentChange >= 0 ? "+" : ""}
+
+                                        {row.netPercentChange.toFixed(2)}%
+
+                                    </td>
+
+                                </tr>
+
+                            ))}
+
+                        </tbody>
+
+                    </table>
+
+                )}
+
+            </section>
 
             <section className="content">
 

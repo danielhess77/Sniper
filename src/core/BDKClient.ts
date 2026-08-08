@@ -2,7 +2,7 @@
  * Sniper
  * Broker Development Kit Client
  *
- * Version: 0.4
+ * Version: 0.5
  *
  * Purpose:
  * Retrieve market data from the BDK.
@@ -21,6 +21,20 @@ export interface Candle {
     volume: number;
 
     datetime: number;
+
+}
+
+export interface QuoteSnapshot {
+
+    symbol: string;
+
+    lastPrice: number;
+
+    totalVolume: number;
+
+    avg10DaysVolume: number;
+
+    netPercentChange: number;
 
 }
 
@@ -128,6 +142,109 @@ export class BDKClient {
             await response.json();
 
         return data.candles ?? [];
+
+    }
+
+    //--------------------------------------------------
+    // Batch quotes (single Schwab request for many symbols)
+    //--------------------------------------------------
+
+    async getQuotes(
+
+        symbols: string[]
+
+    ): Promise<QuoteSnapshot[]> {
+
+        if (symbols.length === 0) {
+
+            return [];
+
+        }
+
+        const url =
+            new URL(
+                "/quotes",
+                this.baseUrl
+            );
+
+        url.searchParams.set(
+            "symbols",
+            symbols.join(",")
+        );
+
+        console.log("");
+        console.log("=== BDK Quotes ===");
+        console.log(url.toString());
+        console.log("==================");
+        console.log("");
+
+        const response =
+            await fetch(url);
+
+        if (!response.ok) {
+
+            const body =
+                await response.text();
+
+            console.error("BDK Quotes Response:");
+            console.error(body);
+
+            throw new Error(
+                `BDK quotes failed (${response.status})`
+            );
+
+        }
+
+        const data =
+            await response.json() as Record<string, any>;
+
+        const snapshots: QuoteSnapshot[] = [];
+
+        for (const symbol of symbols) {
+
+            const row = data[symbol];
+
+            if (!row) {
+
+                continue;
+
+            }
+
+            const quote = row.quote ?? {};
+
+            const fundamental = row.fundamental ?? {};
+
+            snapshots.push({
+
+                symbol,
+
+                lastPrice:
+                    Number(
+                        quote.lastPrice ??
+                        quote.mark ??
+                        0
+                    ),
+
+                totalVolume:
+                    Number(
+                        quote.totalVolume ?? 0
+                    ),
+
+                avg10DaysVolume:
+                    Number(
+                        fundamental.avg10DaysVolume ?? 0
+                    ),
+
+                netPercentChange:
+                    Number(
+                        quote.netPercentChange ?? 0
+                    )
+
+            });
+
+        }
+
+        return snapshots;
 
     }
 
