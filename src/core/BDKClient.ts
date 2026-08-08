@@ -2,10 +2,7 @@
  * Sniper
  * Broker Development Kit Client
  *
- * Version: 0.9
- *
- * Purpose:
- * Retrieve market data from the BDK.
+ * Version: 1.0
  */
 
 export interface Candle {
@@ -38,14 +35,62 @@ export interface QuoteSnapshot {
 
 }
 
+export interface OptionContract {
+
+    putCall: string;
+
+    symbol: string;
+
+    description: string;
+
+    bid: number;
+
+    ask: number;
+
+    last: number;
+
+    mark: number;
+
+    delta: number;
+
+    gamma: number;
+
+    theta: number;
+
+    vega: number;
+
+    volatility: number;
+
+    openInterest: number;
+
+    totalVolume: number;
+
+    strikePrice: number;
+
+    expirationDate: string;
+
+    daysToExpiration: number;
+
+    inTheMoney: boolean;
+
+}
+
+export interface OptionChainResult {
+
+    symbol: string;
+
+    underlyingPrice: number;
+
+    callExpDateMap: Record<string, Record<string, OptionContract[]>>;
+
+    putExpDateMap: Record<string, Record<string, OptionContract[]>>;
+
+}
+
 export class BDKClient {
 
     private readonly baseUrl =
         "https://bdk.daniel-hess7.workers.dev";
-
-    //--------------------------------------------------
-    // Intraday history (today only — startDate/endDate)
-    //--------------------------------------------------
 
     async getHistory(
 
@@ -60,10 +105,7 @@ export class BDKClient {
     ): Promise<Candle[]> {
 
         const url =
-            new URL(
-                "/history",
-                this.baseUrl
-            );
+            new URL("/history", this.baseUrl);
 
         const now = new Date();
 
@@ -73,30 +115,15 @@ export class BDKClient {
 
         url.searchParams.set("symbol", symbol);
 
-        url.searchParams.set(
-            "startDate",
-            start.getTime().toString()
-        );
+        url.searchParams.set("startDate", start.getTime().toString());
 
-        url.searchParams.set(
-            "endDate",
-            now.getTime().toString()
-        );
+        url.searchParams.set("endDate", now.getTime().toString());
 
-        url.searchParams.set(
-            "periodType",
-            "day"
-        );
+        url.searchParams.set("periodType", "day");
 
-        url.searchParams.set(
-            "frequencyType",
-            frequencyType
-        );
+        url.searchParams.set("frequencyType", frequencyType);
 
-        url.searchParams.set(
-            "frequency",
-            frequency
-        );
+        url.searchParams.set("frequency", frequency);
 
         url.searchParams.set(
             "needExtendedHoursData",
@@ -107,16 +134,10 @@ export class BDKClient {
 
     }
 
-    //--------------------------------------------------
-    // Multi-day minute history (for opening-range RVOL)
-    // periodType=day + period (1–10) — no start/end dates
-    //--------------------------------------------------
-
     async getMinuteHistory(
 
         symbol: string,
 
-        /** Trading days of minute bars (Schwab allows up to 10) */
         days: number = 10,
 
         frequency = "5"
@@ -124,48 +145,26 @@ export class BDKClient {
     ): Promise<Candle[]> {
 
         const url =
-            new URL(
-                "/history",
-                this.baseUrl
-            );
+            new URL("/history", this.baseUrl);
 
         const period =
             Math.min(10, Math.max(1, Math.floor(days)));
 
         url.searchParams.set("symbol", symbol);
 
-        url.searchParams.set(
-            "periodType",
-            "day"
-        );
+        url.searchParams.set("periodType", "day");
 
-        url.searchParams.set(
-            "period",
-            String(period)
-        );
+        url.searchParams.set("period", String(period));
 
-        url.searchParams.set(
-            "frequencyType",
-            "minute"
-        );
+        url.searchParams.set("frequencyType", "minute");
 
-        url.searchParams.set(
-            "frequency",
-            frequency
-        );
+        url.searchParams.set("frequency", frequency);
 
-        url.searchParams.set(
-            "needExtendedHoursData",
-            "false"
-        );
+        url.searchParams.set("needExtendedHoursData", "false");
 
         return this.fetchCandles(url);
 
     }
-
-    //--------------------------------------------------
-    // Daily history (swing)
-    //--------------------------------------------------
 
     async getDailyHistory(
 
@@ -176,45 +175,23 @@ export class BDKClient {
     ): Promise<Candle[]> {
 
         const url =
-            new URL(
-                "/history",
-                this.baseUrl
-            );
+            new URL("/history", this.baseUrl);
 
         url.searchParams.set("symbol", symbol);
 
-        url.searchParams.set(
-            "periodType",
-            "month"
-        );
+        url.searchParams.set("periodType", "month");
 
-        url.searchParams.set(
-            "period",
-            String(months)
-        );
+        url.searchParams.set("period", String(months));
 
-        url.searchParams.set(
-            "frequencyType",
-            "daily"
-        );
+        url.searchParams.set("frequencyType", "daily");
 
-        url.searchParams.set(
-            "frequency",
-            "1"
-        );
+        url.searchParams.set("frequency", "1");
 
-        url.searchParams.set(
-            "needExtendedHoursData",
-            "false"
-        );
+        url.searchParams.set("needExtendedHoursData", "false");
 
         return this.fetchCandles(url);
 
     }
-
-    //--------------------------------------------------
-    // Batch quotes
-    //--------------------------------------------------
 
     async getQuotes(
 
@@ -222,43 +199,28 @@ export class BDKClient {
 
     ): Promise<QuoteSnapshot[]> {
 
-        if (symbols.length === 0) {
-
-            return [];
-
-        }
+        if (symbols.length === 0) return [];
 
         const url =
-            new URL(
-                "/quotes",
-                this.baseUrl
-            );
+            new URL("/quotes", this.baseUrl);
 
-        url.searchParams.set(
-            "symbols",
-            symbols.join(",")
-        );
+        url.searchParams.set("symbols", symbols.join(","));
 
         console.log("");
         console.log("=== BDK Quotes ===");
         console.log(url.toString());
         console.log("==================");
-        console.log("");
 
-        const response =
-            await fetch(url);
+        const response = await fetch(url);
 
         if (!response.ok) {
 
-            const body =
-                await response.text();
+            const body = await response.text();
 
             console.error("BDK Quotes Response:");
             console.error(body);
 
-            throw new Error(
-                `BDK quotes failed (${response.status})`
-            );
+            throw new Error(`BDK quotes failed (${response.status})`);
 
         }
 
@@ -271,11 +233,7 @@ export class BDKClient {
 
             const row = data[symbol];
 
-            if (!row) {
-
-                continue;
-
-            }
+            if (!row) continue;
 
             const quote = row.quote ?? {};
 
@@ -285,33 +243,66 @@ export class BDKClient {
 
                 symbol,
 
-                lastPrice:
-                    Number(
-                        quote.lastPrice ??
-                        quote.mark ??
-                        0
-                    ),
+                lastPrice: Number(quote.lastPrice ?? quote.mark ?? 0),
 
-                totalVolume:
-                    Number(
-                        quote.totalVolume ?? 0
-                    ),
+                totalVolume: Number(quote.totalVolume ?? 0),
 
-                avg10DaysVolume:
-                    Number(
-                        fundamental.avg10DaysVolume ?? 0
-                    ),
+                avg10DaysVolume: Number(fundamental.avg10DaysVolume ?? 0),
 
-                netPercentChange:
-                    Number(
-                        quote.netPercentChange ?? 0
-                    )
+                netPercentChange: Number(quote.netPercentChange ?? 0)
 
             });
 
         }
 
         return snapshots;
+
+    }
+
+    async getOptionChain(
+
+        symbol: string
+
+    ): Promise<OptionChainResult> {
+
+        const url =
+            new URL("/options", this.baseUrl);
+
+        url.searchParams.set("symbol", symbol);
+
+        console.log("");
+        console.log("=== BDK Options ===");
+        console.log(url.toString());
+        console.log("===================");
+
+        const response = await fetch(url);
+
+        if (!response.ok) {
+
+            const body = await response.text();
+
+            console.error("BDK Options Response:");
+            console.error(body);
+
+            throw new Error(
+                `BDK options failed (${response.status}): ${body.slice(0, 200)}`
+            );
+
+        }
+
+        const data = await response.json() as any;
+
+        return {
+
+            symbol: data.symbol ?? symbol,
+
+            underlyingPrice: Number(data.underlyingPrice ?? 0),
+
+            callExpDateMap: data.callExpDateMap ?? {},
+
+            putExpDateMap: data.putExpDateMap ?? {}
+
+        };
 
     }
 
@@ -325,15 +316,12 @@ export class BDKClient {
         console.log("=== BDK Request ===");
         console.log(url.toString());
         console.log("===================");
-        console.log("");
 
-        const response =
-            await fetch(url);
+        const response = await fetch(url);
 
         if (!response.ok) {
 
-            const body =
-                await response.text();
+            const body = await response.text();
 
             console.error("BDK Response:");
             console.error(body);
@@ -344,8 +332,7 @@ export class BDKClient {
 
         }
 
-        const data =
-            await response.json();
+        const data = await response.json();
 
         return data.candles ?? [];
 
