@@ -11,6 +11,14 @@ export default defineConfig({
 
     server: {
 
+        // Required for GitHub Codespaces port forwarding
+        host: true,
+
+        port: 5173,
+
+        strictPort: true,
+
+        // Browser calls /api/* → Vite forwards to the Sniper Express API
         proxy: {
 
             "/api": {
@@ -19,7 +27,9 @@ export default defineConfig({
 
                 changeOrigin: true,
 
-                rewrite: path =>
+                secure: false,
+
+                rewrite: (path) =>
 
                     path.replace(/^\/api/, "")
 
