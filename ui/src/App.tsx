@@ -1,10 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import "./styles.css";
 
-import { getScan, getSwing, getRvol } from "./api";
+import {
+    getScan,
+    getSwing,
+    getRvol,
+    getWatchlist,
+    putWatchlist
+} from "./api";
 import type { ScanCard, SwingCard, RvolCard } from "./api";
 
-type TabId = "intraday" | "swing" | "rvol";
+type TabId = "intraday" | "swing" | "rvol" | "watchlist";
 
 type SwingFilter = "ALL" | "SHORT" | "INTERMEDIATE";
 
@@ -55,7 +61,7 @@ function App() {
     const [lastSwing, setLastSwing] =
         useState("");
 
-    const [watchlist, setWatchlist] =
+    const [watchlistCount, setWatchlistCount] =
         useState(0);
 
     const [playbooks, setPlaybooks] =
@@ -88,6 +94,22 @@ function App() {
     const [lastRvol, setLastRvol] =
         useState("");
 
+    // Watchlist editor state
+    const [symbols, setSymbols] =
+        useState<string[]>([]);
+
+    const [draftInput, setDraftInput] =
+        useState("");
+
+    const [watchlistDirty, setWatchlistDirty] =
+        useState(false);
+
+    const [watchlistSaving, setWatchlistSaving] =
+        useState(false);
+
+    const [watchlistMsg, setWatchlistMsg] =
+        useState<{ type: "ok" | "err"; text: string } | null>(null);
+
     async function refreshScan() {
 
         try {
@@ -97,7 +119,7 @@ function App() {
 
             setResults(scanResponse.results);
 
-            setWatchlist(scanResponse.watchlist);
+            setWatchlistCount(scanResponse.watchlist);
 
             setPlaybooks(scanResponse.playbooks);
 
@@ -166,7 +188,7 @@ function App() {
 
             setSwingWatching(swingResponse.watching);
 
-            setWatchlist(swingResponse.watchlist);
+            setWatchlistCount(swingResponse.watchlist);
 
             setLastSwing(
 
@@ -205,8 +227,6 @@ function App() {
             });
 
         } catch {
-
-            // leave prior swing data; surface only if active tab
 
             if (tab === "swing") {
 
@@ -253,6 +273,33 @@ function App() {
 
     }
 
+    async function refreshWatchlist() {
+
+        try {
+
+            const response =
+                await getWatchlist();
+
+            setSymbols(response.symbols);
+
+            setWatchlistCount(response.count);
+
+            setWatchlistDirty(false);
+
+            setWatchlistMsg(null);
+
+        } catch {
+
+            if (tab === "watchlist") {
+
+                setError("Unable to reach Watchlist endpoint");
+
+            }
+
+        }
+
+    }
+
     useEffect(() => {
 
         refreshScan();
@@ -260,6 +307,8 @@ function App() {
         refreshSwing();
 
         refreshRvol();
+
+        refreshWatchlist();
 
         const scanTimer = setInterval(refreshScan, 60_000);
 
@@ -303,6 +352,119 @@ function App() {
 
     }, [filteredSwing]);
 
+    function addSymbol() {
+
+        const parts =
+            draftInput
+                .split(/[\s,;]+/)
+                .map(s => s.trim().toUpperCase())
+                .filter(Boolean);
+
+        if (!parts.length) return;
+
+        setSymbols(prev => {
+
+            const next = [...prev];
+
+            for (const p of parts) {
+
+                const clean =
+                    p.replace(/[^A-Z0-9.\-]/g, "");
+
+                if (!clean || clean.length > 12) continue;
+
+                if (!next.includes(clean)) next.push(clean);
+
+            }
+
+            return next;
+
+        });
+
+        setDraftInput("");
+
+        setWatchlistDirty(true);
+
+        setWatchlistMsg(null);
+
+    }
+
+    function removeSymbol(symbol: string) {
+
+        setSymbols(prev => prev.filter(s => s !== symbol));
+
+        setWatchlistDirty(true);
+
+        setWatchlistMsg(null);
+
+    }
+
+    async function saveWatchlist() {
+
+        if (!symbols.length) {
+
+            setWatchlistMsg({
+
+                type: "err",
+
+                text: "Watchlist cannot be empty"
+
+            });
+
+            return;
+
+        }
+
+        setWatchlistSaving(true);
+
+        try {
+
+            const response =
+                await putWatchlist(symbols);
+
+            setSymbols(response.symbols);
+
+            setWatchlistCount(response.count);
+
+            setWatchlistDirty(false);
+
+            setWatchlistMsg({
+
+                type: "ok",
+
+                text: `Saved ${response.count} symbols — next scans will use this list`
+
+            });
+
+            // Kick scanners so counts refresh soon
+
+            refreshScan();
+
+            refreshRvol();
+
+        } catch (err) {
+
+            setWatchlistMsg({
+
+                type: "err",
+
+                text:
+                    err instanceof Error
+
+                        ? err.message
+
+                        : "Save failed"
+
+            });
+
+        } finally {
+
+            setWatchlistSaving(false);
+
+        }
+
+    }
+
     const subtitle =
 
         tab === "intraday"
@@ -313,7 +475,11 @@ function App() {
 
                 ? "RS + Pullback Swing Scanner"
 
-                : "Relative Volume Leaderboard";
+                : tab === "rvol"
+
+                    ? "Relative Volume Leaderboard"
+
+                    : "Watchlist Editor";
 
     return (
 
@@ -351,7 +517,11 @@ function App() {
 
                                     ? "Last Swing"
 
-                                    : "Last Scan"}
+                                    : tab === "watchlist"
+
+                                        ? "Symbols"
+
+                                        : "Last Scan"}
 
                         </span>
 
@@ -365,7 +535,11 @@ function App() {
 
                                     ? lastSwing || "--"
 
-                                    : lastScan || "--"}
+                                    : tab === "watchlist"
+
+                                        ? symbols.length
+
+                                        : lastScan || "--"}
 
                         </strong>
 
@@ -385,7 +559,11 @@ function App() {
 
                                     ? "5 min"
 
-                                    : "60 sec"}
+                                    : tab === "watchlist"
+
+                                        ? "manual"
+
+                                        : "60 sec"}
 
                         </strong>
 
@@ -433,6 +611,24 @@ function App() {
 
                 </button>
 
+                <button
+
+                    className={`tab ${tab === "watchlist" ? "active" : ""}`}
+
+                    onClick={() => {
+
+                        setTab("watchlist");
+
+                        refreshWatchlist();
+
+                    }}
+
+                >
+
+                    Watchlist
+
+                </button>
+
             </div>
 
             {error && (
@@ -455,7 +651,7 @@ function App() {
 
                             <span>Watchlist</span>
 
-                            <strong>{watchlist}</strong>
+                            <strong>{watchlistCount}</strong>
 
                         </div>
 
@@ -653,7 +849,7 @@ function App() {
 
                             <span>Watchlist</span>
 
-                            <strong>{watchlist}</strong>
+                            <strong>{watchlistCount}</strong>
 
                         </div>
 
@@ -1092,6 +1288,144 @@ function App() {
                         </table>
 
                     )}
+
+                </section>
+
+            )}
+
+            {tab === "watchlist" && (
+
+                <section className="watchlistPanel">
+
+                    <div className="panelHeader">
+
+                        Edit Watchlist ({symbols.length})
+
+                    </div>
+
+                    <div className="watchlistBody">
+
+                        <div className="watchlistAdd">
+
+                            <input
+
+                                value={draftInput}
+
+                                onChange={e => setDraftInput(e.target.value)}
+
+                                onKeyDown={e => {
+
+                                    if (e.key === "Enter") {
+
+                                        e.preventDefault();
+
+                                        addSymbol();
+
+                                    }
+
+                                }}
+
+                                placeholder="Add symbol(s) — e.g. AAPL or AAPL, AMD TSLA"
+
+                            />
+
+                            <button
+
+                                className="btn btn-primary"
+
+                                type="button"
+
+                                onClick={addSymbol}
+
+                            >
+
+                                Add
+
+                            </button>
+
+                        </div>
+
+                        <div className="chipGrid">
+
+                            {symbols.map(symbol => (
+
+                                <span className="chip" key={symbol}>
+
+                                    {symbol}
+
+                                    <button
+
+                                        type="button"
+
+                                        aria-label={`Remove ${symbol}`}
+
+                                        onClick={() => removeSymbol(symbol)}
+
+                                    >
+
+                                        ×
+
+                                    </button>
+
+                                </span>
+
+                            ))}
+
+                        </div>
+
+                        <div className="watchlistFooter">
+
+                            <span className="watchlistHint">
+
+                                {watchlistDirty
+
+                                    ? "Unsaved changes — Save to apply to scans"
+
+                                    : "Saved list is used by Intraday, Swing, and RVOL"}
+
+                            </span>
+
+                            <button
+
+                                className="btn btn-success"
+
+                                type="button"
+
+                                disabled={!watchlistDirty || watchlistSaving}
+
+                                onClick={saveWatchlist}
+
+                            >
+
+                                {watchlistSaving ? "Saving…" : "Save watchlist"}
+
+                            </button>
+
+                        </div>
+
+                        {watchlistMsg && (
+
+                            <div
+
+                                className={
+
+                                    watchlistMsg.type === "ok"
+
+                                        ? "watchlistMsg ok"
+
+                                        : "watchlistMsg err"
+
+                                }
+
+                            >
+
+                                {watchlistMsg.text}
+
+                            </div>
+
+                        )}
+
+                    </div>
 
                 </section>
 
