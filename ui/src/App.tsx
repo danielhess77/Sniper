@@ -8,7 +8,7 @@ import {
     getWatchlist,
     putWatchlist
 } from "./api";
-import type { ScanCard, SwingCard, RvolCard } from "./api";
+import type { ScanCard, SwingCard, RvolCard, OptionSuggestion } from "./api";
 
 type TabId = "intraday" | "swing" | "rvol" | "watchlist";
 type SwingFilter = "ALL" | "SHORT" | "INTERMEDIATE";
@@ -23,6 +23,32 @@ function horizonLabel(id: string): string {
     if (id === "SHORT") return "1–3 Day";
     if (id === "INTERMEDIATE") return "1–3 Week";
     return id;
+}
+
+function OptionBlock({ option }: { option: OptionSuggestion }) {
+    return (
+        <>
+            <div className="detail" style={{ borderTop: "1px solid #283852", marginTop: 4 }}>
+                <label>Option</label>
+                <strong style={{ color: option.ok ? "#31d07d" : "#ff5d73" }}>
+                    {option.ok ? `${option.side} ${option.strike}` : "No liquid contract"}
+                </strong>
+            </div>
+            {option.ok ? (
+                <>
+                    <div className="detail"><label>Contract</label><strong>{option.description || option.symbol}</strong></div>
+                    <div className="detail"><label>Expiry / DTE</label><strong>{option.expiration} · {option.dte}d</strong></div>
+                    <div className="detail"><label>Bid / Ask</label><strong>{option.bid.toFixed(2)} / {option.ask.toFixed(2)}</strong></div>
+                    <div className="detail"><label>Mid / Spread</label><strong>{option.mid.toFixed(2)} · {option.spreadPct}%</strong></div>
+                    <div className="detail"><label>Delta</label><strong>{option.delta}</strong></div>
+                    <div className="detail"><label>OI / Vol</label><strong>{option.openInterest} / {option.volume}</strong></div>
+                    <div className="detail"><label>Why</label><strong>{option.reason}</strong></div>
+                </>
+            ) : (
+                <div className="detail"><label>Why</label><strong>{option.reason}</strong></div>
+            )}
+        </>
+    );
 }
 
 function App() {
@@ -305,31 +331,7 @@ function App() {
                                     <div className="detail"><label>Stop</label><strong>{selectedScan.stop.toFixed(2)}</strong></div>
                                     <div className="detail"><label>Target</label><strong>{selectedScan.target.toFixed(2)}</strong></div>
                                     <div className="detail"><label>Risk / Reward</label><strong>{selectedScan.riskReward.toFixed(2)}</strong></div>
-                                    {selectedScan.option && (
-                                        <>
-                                            <div className="detail" style={{ borderTop: "1px solid #283852", marginTop: 4 }}>
-                                                <label>Option</label>
-                                                <strong style={{ color: selectedScan.option.ok ? "#31d07d" : "#ff5d73" }}>
-                                                    {selectedScan.option.ok
-                                                        ? `${selectedScan.option.side} ${selectedScan.option.strike}`
-                                                        : "No liquid contract"}
-                                                </strong>
-                                            </div>
-                                            {selectedScan.option.ok ? (
-                                                <>
-                                                    <div className="detail"><label>Contract</label><strong>{selectedScan.option.description || selectedScan.option.symbol}</strong></div>
-                                                    <div className="detail"><label>Expiry / DTE</label><strong>{selectedScan.option.expiration} · {selectedScan.option.dte}d</strong></div>
-                                                    <div className="detail"><label>Bid / Ask</label><strong>{selectedScan.option.bid.toFixed(2)} / {selectedScan.option.ask.toFixed(2)}</strong></div>
-                                                    <div className="detail"><label>Mid / Spread</label><strong>{selectedScan.option.mid.toFixed(2)} · {selectedScan.option.spreadPct}%</strong></div>
-                                                    <div className="detail"><label>Delta</label><strong>{selectedScan.option.delta}</strong></div>
-                                                    <div className="detail"><label>OI / Vol</label><strong>{selectedScan.option.openInterest} / {selectedScan.option.volume}</strong></div>
-                                                    <div className="detail"><label>Why</label><strong>{selectedScan.option.reason}</strong></div>
-                                                </>
-                                            ) : (
-                                                <div className="detail"><label>Why</label><strong>{selectedScan.option.reason}</strong></div>
-                                            )}
-                                        </>
-                                    )}
+                                    {selectedScan.option && <OptionBlock option={selectedScan.option} />}
                                 </>
                             ) : (
                                 <div style={{ padding: 20, color: "#8ea2c7" }}>No setup selected.</div>
@@ -396,6 +398,7 @@ function App() {
                                     <div className="detail"><label>Target</label><strong>{selectedSwing.target ? selectedSwing.target.toFixed(2) : "—"}</strong></div>
                                     <div className="detail"><label>Risk / Reward</label><strong>{selectedSwing.riskReward ? selectedSwing.riskReward.toFixed(2) : "—"}</strong></div>
                                     <div className="detail"><label>Reason</label><strong>{selectedSwing.reason}</strong></div>
+                                    {selectedSwing.option && <OptionBlock option={selectedSwing.option} />}
                                 </>
                             ) : (
                                 <div style={{ padding: 20, color: "#8ea2c7" }}>No swing selected.</div>
