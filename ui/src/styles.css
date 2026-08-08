@@ -63,7 +63,7 @@ body {
 
     align-items: center;
 
-    margin-bottom: 24px;
+    margin-bottom: 20px;
 
 }
 
@@ -117,11 +117,89 @@ body {
 
 }
 
+.tabs {
+
+    display: flex;
+
+    gap: 8px;
+
+    margin-bottom: 20px;
+
+}
+
+.tab {
+
+    background: var(--panel);
+
+    border: 1px solid var(--border);
+
+    color: var(--muted);
+
+    border-radius: 999px;
+
+    padding: 10px 18px;
+
+    font-weight: 600;
+
+    font-size: 14px;
+
+    cursor: pointer;
+
+}
+
+.tab.active {
+
+    background: rgba(79, 163, 255, 0.16);
+
+    border-color: var(--blue);
+
+    color: var(--text);
+
+}
+
+.filters {
+
+    display: flex;
+
+    gap: 8px;
+
+    margin-bottom: 16px;
+
+    flex-wrap: wrap;
+
+}
+
+.filterBtn {
+
+    background: transparent;
+
+    border: 1px solid var(--border);
+
+    color: var(--muted);
+
+    border-radius: 999px;
+
+    padding: 8px 14px;
+
+    font-size: 13px;
+
+    cursor: pointer;
+
+}
+
+.filterBtn.active {
+
+    border-color: var(--yellow);
+
+    color: var(--yellow);
+
+}
+
 .summary {
 
     display: grid;
 
-    grid-template-columns: repeat(4,1fr);
+    grid-template-columns: repeat(4, 1fr);
 
     gap: 16px;
 
@@ -225,6 +303,52 @@ body {
 
 }
 
+.badge {
+
+    display: inline-block;
+
+    padding: 4px 8px;
+
+    border-radius: 999px;
+
+    font-size: 11px;
+
+    font-weight: 700;
+
+}
+
+.badge-short {
+
+    background: rgba(79, 163, 255, 0.15);
+
+    color: var(--blue);
+
+}
+
+.badge-intermediate {
+
+    background: rgba(245, 200, 75, 0.15);
+
+    color: var(--yellow);
+
+}
+
+.badge-state {
+
+    background: rgba(142, 162, 199, 0.12);
+
+    color: var(--muted);
+
+}
+
+.badge-qualified {
+
+    background: rgba(49, 208, 125, 0.15);
+
+    color: var(--green);
+
+}
+
 .content {
 
     display: grid;
@@ -293,7 +417,7 @@ td {
 
 tbody tr:hover {
 
-    background: rgba(79,163,255,.08);
+    background: rgba(79, 163, 255, 0.08);
 
     cursor: pointer;
 
@@ -351,7 +475,7 @@ tbody tr:hover {
 
     .summary {
 
-        grid-template-columns: repeat(2,1fr);
+        grid-template-columns: repeat(2, 1fr);
 
     }
 

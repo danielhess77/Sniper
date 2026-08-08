@@ -1,8 +1,7 @@
 /**
  * Sniper UI API
  *
- * Fetches live scan results
- * and RVOL leaderboard from the Sniper backend.
+ * Fetches live scan, swing, and RVOL results from the Sniper backend.
  */
 
 export interface ScanCard {
@@ -47,6 +46,56 @@ export interface ScanResponse {
     qualified: number;
 
     results: ScanCard[];
+
+}
+
+export interface SwingCard {
+
+    symbol: string;
+
+    horizon: string;
+
+    horizonId: "SHORT" | "INTERMEDIATE" | string;
+
+    state: string;
+
+    qualified: boolean;
+
+    score: number;
+
+    direction: "BULLISH" | "NONE" | string;
+
+    entry: number;
+
+    stop: number;
+
+    target: number;
+
+    riskReward: number;
+
+    rsRank: number;
+
+    rs: number;
+
+    reason: string;
+
+}
+
+export interface SwingResponse {
+
+    success: boolean;
+
+    timestamp: string;
+
+    watchlist: number;
+
+    total: number;
+
+    qualified: number;
+
+    watching: number;
+
+    results: SwingCard[];
 
 }
 
@@ -96,6 +145,25 @@ export async function getScan(): Promise<ScanResponse> {
         throw new Error(
 
             "Unable to reach Sniper API"
+
+        );
+
+    }
+
+    return response.json();
+
+}
+
+export async function getSwing(): Promise<SwingResponse> {
+
+    const response =
+        await fetch(`${API}/swing`);
+
+    if (!response.ok) {
+
+        throw new Error(
+
+            "Unable to reach Swing endpoint"
 
         );
 

@@ -1,8 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import "./styles.css";
 
-import { getScan, getRvol } from "./api";
-import type { ScanCard, RvolCard } from "./api";
+import { getScan, getSwing, getRvol } from "./api";
+import type { ScanCard, SwingCard, RvolCard } from "./api";
+
+type TabId = "intraday" | "swing" | "rvol";
+
+type SwingFilter = "ALL" | "SHORT" | "INTERMEDIATE";
 
 function formatVolume(n: number): string {
 
@@ -22,7 +26,23 @@ function formatVolume(n: number): string {
 
 }
 
+function horizonLabel(id: string): string {
+
+    if (id === "SHORT") return "1–3 Day";
+
+    if (id === "INTERMEDIATE") return "1–3 Week";
+
+    return id;
+
+}
+
 function App() {
+
+    const [tab, setTab] =
+        useState<TabId>("intraday");
+
+    const [swingFilter, setSwingFilter] =
+        useState<SwingFilter>("ALL");
 
     const [loading, setLoading] = useState(true);
 
@@ -30,6 +50,9 @@ function App() {
         useState("");
 
     const [lastScan, setLastScan] =
+        useState("");
+
+    const [lastSwing, setLastSwing] =
         useState("");
 
     const [watchlist, setWatchlist] =
@@ -41,11 +64,23 @@ function App() {
     const [qualified, setQualified] =
         useState(0);
 
+    const [swingQualified, setSwingQualified] =
+        useState(0);
+
+    const [swingWatching, setSwingWatching] =
+        useState(0);
+
     const [results, setResults] =
         useState<ScanCard[]>([]);
 
-    const [selected, setSelected] =
+    const [swingResults, setSwingResults] =
+        useState<SwingCard[]>([]);
+
+    const [selectedScan, setSelectedScan] =
         useState<ScanCard | null>(null);
+
+    const [selectedSwing, setSelectedSwing] =
+        useState<SwingCard | null>(null);
 
     const [rvolLive, setRvolLive] =
         useState<RvolCard[]>([]);
@@ -62,74 +97,122 @@ function App() {
 
             setResults(scanResponse.results);
 
-            setWatchlist(
-                scanResponse.watchlist
-            );
+            setWatchlist(scanResponse.watchlist);
 
-            setPlaybooks(
-                scanResponse.playbooks
-            );
+            setPlaybooks(scanResponse.playbooks);
 
-            setQualified(
-                scanResponse.qualified
-            );
+            setQualified(scanResponse.qualified);
 
             setLastScan(
 
-                new Date(
+                new Date(scanResponse.timestamp).toLocaleTimeString([], {
 
-                    scanResponse.timestamp
+                    hour: "2-digit",
 
-                ).toLocaleTimeString(
+                    minute: "2-digit",
 
-                    [],
+                    second: "2-digit"
 
-                    {
-
-                        hour: "2-digit",
-
-                        minute: "2-digit",
-
-                        second: "2-digit"
-
-                    }
-
-                )
+                })
 
             );
 
-            if (
+            setSelectedScan(prev => {
 
-                scanResponse.results.length &&
-                !selected
+                if (!scanResponse.results.length) return null;
 
-            ) {
+                if (!prev) return scanResponse.results[0];
 
-                setSelected(
+                return (
 
-                    scanResponse.results[0]
+                    scanResponse.results.find(
+
+                        r =>
+
+                            r.symbol === prev.symbol &&
+
+                            r.playbook === prev.playbook
+
+                    ) ?? scanResponse.results[0]
 
                 );
 
-            }
+            });
 
             setError("");
 
+        } catch {
+
+            setError("Unable to connect to Sniper API");
+
+        } finally {
+
+            setLoading(false);
+
         }
 
-        catch {
+    }
 
-            setError(
+    async function refreshSwing() {
 
-                "Unable to connect to Sniper API"
+        try {
+
+            const swingResponse =
+                await getSwing();
+
+            setSwingResults(swingResponse.results);
+
+            setSwingQualified(swingResponse.qualified);
+
+            setSwingWatching(swingResponse.watching);
+
+            setWatchlist(swingResponse.watchlist);
+
+            setLastSwing(
+
+                new Date(swingResponse.timestamp).toLocaleTimeString([], {
+
+                    hour: "2-digit",
+
+                    minute: "2-digit",
+
+                    second: "2-digit"
+
+                })
 
             );
 
-        }
+            setSelectedSwing(prev => {
 
-        finally {
+                if (!swingResponse.results.length) return null;
 
-            setLoading(false);
+                if (!prev) return swingResponse.results[0];
+
+                return (
+
+                    swingResponse.results.find(
+
+                        r =>
+
+                            r.symbol === prev.symbol &&
+
+                            r.horizonId === prev.horizonId
+
+                    ) ?? swingResponse.results[0]
+
+                );
+
+            });
+
+        } catch {
+
+            // leave prior swing data; surface only if active tab
+
+            if (tab === "swing") {
+
+                setError("Unable to reach Swing endpoint");
+
+            }
 
         }
 
@@ -148,35 +231,23 @@ function App() {
 
                 setLastRvol(
 
-                    new Date(
+                    new Date(rvolResponse.timestamp).toLocaleTimeString([], {
 
-                        rvolResponse.timestamp
+                        hour: "2-digit",
 
-                    ).toLocaleTimeString(
+                        minute: "2-digit",
 
-                        [],
+                        second: "2-digit"
 
-                        {
-
-                            hour: "2-digit",
-
-                            minute: "2-digit",
-
-                            second: "2-digit"
-
-                        }
-
-                    )
+                    })
 
                 );
 
             }
 
-        }
+        } catch {
 
-        catch {
-
-            // RVOL is non-critical — don't block the scan UI
+            // non-critical
 
         }
 
@@ -186,32 +257,21 @@ function App() {
 
         refreshScan();
 
+        refreshSwing();
+
         refreshRvol();
 
-        const scanTimer =
+        const scanTimer = setInterval(refreshScan, 60_000);
 
-            setInterval(
+        const swingTimer = setInterval(refreshSwing, 5 * 60_000);
 
-                refreshScan,
-
-                60_000
-
-            );
-
-        // RVOL every 15 minutes — tracks which names are strengthening
-        const rvolTimer =
-
-            setInterval(
-
-                refreshRvol,
-
-                15 * 60_000
-
-            );
+        const rvolTimer = setInterval(refreshRvol, 15 * 60_000);
 
         return () => {
 
             clearInterval(scanTimer);
+
+            clearInterval(swingTimer);
 
             clearInterval(rvolTimer);
 
@@ -219,15 +279,41 @@ function App() {
 
     }, []);
 
+    const filteredSwing = useMemo(() => {
+
+        if (swingFilter === "ALL") return swingResults;
+
+        return swingResults.filter(r => r.horizonId === swingFilter);
+
+    }, [swingResults, swingFilter]);
+
     const topScore = useMemo(() => {
 
-        if (!results.length)
-
-            return "--";
+        if (!results.length) return "--";
 
         return results[0].score;
 
     }, [results]);
+
+    const topSwingScore = useMemo(() => {
+
+        if (!filteredSwing.length) return "--";
+
+        return filteredSwing[0].score;
+
+    }, [filteredSwing]);
+
+    const subtitle =
+
+        tab === "intraday"
+
+            ? "Institutional Intraday Scanner"
+
+            : tab === "swing"
+
+                ? "RS + Pullback Swing Scanner"
+
+                : "Relative Volume Leaderboard";
 
     return (
 
@@ -237,17 +323,9 @@ function App() {
 
                 <div>
 
-                    <h1>
+                    <h1>SNIPER</h1>
 
-                        SNIPER
-
-                    </h1>
-
-                    <p>
-
-                        Institutional Intraday Scanner
-
-                    </p>
+                    <p>{subtitle}</p>
 
                 </div>
 
@@ -257,19 +335,7 @@ function App() {
 
                         <span>Status</span>
 
-                        <strong>
-
-                            {
-
-                                loading
-
-                                    ? "LOADING"
-
-                                    : "LIVE"
-
-                            }
-
-                        </strong>
+                        <strong>{loading ? "LOADING" : "LIVE"}</strong>
 
                     </div>
 
@@ -277,13 +343,29 @@ function App() {
 
                         <span>
 
-                            Last Scan
+                            {tab === "rvol"
+
+                                ? "Last RVOL"
+
+                                : tab === "swing"
+
+                                    ? "Last Swing"
+
+                                    : "Last Scan"}
 
                         </span>
 
                         <strong>
 
-                            {lastScan}
+                            {tab === "rvol"
+
+                                ? lastRvol || "--"
+
+                                : tab === "swing"
+
+                                    ? lastSwing || "--"
+
+                                    : lastScan || "--"}
 
                         </strong>
 
@@ -291,15 +373,19 @@ function App() {
 
                     <div>
 
-                        <span>
-
-                            Refresh
-
-                        </span>
+                        <span>Refresh</span>
 
                         <strong>
 
-                            60 sec
+                            {tab === "rvol"
+
+                                ? "15 min"
+
+                                : tab === "swing"
+
+                                    ? "5 min"
+
+                                    : "60 sec"}
 
                         </strong>
 
@@ -309,429 +395,707 @@ function App() {
 
             </header>
 
-            <section className="summary">
+            <div className="tabs">
 
-                <div className="card">
+                <button
 
-                    <span>
+                    className={`tab ${tab === "intraday" ? "active" : ""}`}
 
-                        Watchlist
+                    onClick={() => setTab("intraday")}
 
-                    </span>
+                >
 
-                    <strong>
+                    Intraday
 
-                        {watchlist}
+                </button>
 
-                    </strong>
+                <button
 
-                </div>
+                    className={`tab ${tab === "swing" ? "active" : ""}`}
 
-                <div className="card">
+                    onClick={() => setTab("swing")}
 
-                    <span>
+                >
 
-                        Playbooks
+                    Swing
 
-                    </span>
+                </button>
 
-                    <strong>
+                <button
 
-                        {playbooks}
+                    className={`tab ${tab === "rvol" ? "active" : ""}`}
 
-                    </strong>
+                    onClick={() => setTab("rvol")}
 
-                </div>
+                >
 
-                <div className="card">
+                    RVOL
 
-                    <span>
+                </button>
 
-                        Qualified
+            </div>
 
-                    </span>
+            {error && (
 
-                    <strong>
+                <div style={{ color: "#ff5d73", marginBottom: 20 }}>
 
-                        {qualified}
-
-                    </strong>
+                    {error}
 
                 </div>
 
-                <div className="card">
+            )}
 
-                    <span>
+            {tab === "intraday" && (
 
-                        Top Score
+                <>
 
-                    </span>
+                    <section className="summary">
 
-                    <strong>
+                        <div className="card">
 
-                        {topScore}
+                            <span>Watchlist</span>
 
-                    </strong>
-
-                </div>
-
-            </section>
-
-            {
-
-                error && (
-
-                    <div
-
-                        style={{
-
-                            color: "#ff5d73",
-
-                            marginBottom: 20
-
-                        }}
-
-                    >
-
-                        {error}
-
-                    </div>
-
-                )
-
-            }
-
-            <section className="rvolPanel">
-
-                <div className="panelHeader rvolHeader">
-
-                    <span>Highest RVOL (Live)</span>
-
-                    <span className="rvolMeta">
-
-                        {lastRvol
-
-                            ? `Updated ${lastRvol} · every 15 min`
-
-                            : "every 15 min"}
-
-                    </span>
-
-                </div>
-
-                {rvolLive.length === 0 ? (
-
-                    <div className="rvolEmpty">
-
-                        No RVOL data yet.
-
-                    </div>
-
-                ) : (
-
-                    <table>
-
-                        <thead>
-
-                            <tr>
-
-                                <th>#</th>
-
-                                <th>Symbol</th>
-
-                                <th>RVOL</th>
-
-                                <th>Volume</th>
-
-                                <th>Avg 10D</th>
-
-                                <th>Last</th>
-
-                                <th>Change</th>
-
-                            </tr>
-
-                        </thead>
-
-                        <tbody>
-
-                            {rvolLive.map((row, index) => (
-
-                                <tr key={row.symbol}>
-
-                                    <td>{index + 1}</td>
-
-                                    <td>{row.symbol}</td>
-
-                                    <td className="rvolValue">
-
-                                        {row.rvol.toFixed(2)}x
-
-                                    </td>
-
-                                    <td>{formatVolume(row.totalVolume)}</td>
-
-                                    <td>{formatVolume(row.avg10DaysVolume)}</td>
-
-                                    <td>{row.lastPrice.toFixed(2)}</td>
-
-                                    <td
-                                        className={
-
-                                            row.netPercentChange >= 0
-
-                                                ? "pos"
-
-                                                : "neg"
-
-                                        }
-
-                                    >
-
-                                        {row.netPercentChange >= 0 ? "+" : ""}
-
-                                        {row.netPercentChange.toFixed(2)}%
-
-                                    </td>
-
-                                </tr>
-
-                            ))}
-
-                        </tbody>
-
-                    </table>
-
-                )}
-
-            </section>
-
-            <section className="content">
-
-                <div className="tablePanel">
-
-                    <div className="panelHeader">
-
-                        Ranked Setups
-
-                    </div>
-
-                    <table>
-
-                        <thead>
-
-                            <tr>
-
-                                <th>
-
-                                    Symbol
-
-                                </th>
-
-                                <th>
-
-                                    Playbook
-
-                                </th>
-
-                                <th>Triggered</th>
-
-                                <th>
-
-                                    Score
-
-                                </th>
-
-                                <th>
-
-                                    Direction
-
-                                </th>
-
-                                <th>
-
-                                    Entry
-
-                                </th>
-
-                                <th>
-
-                                    R:R
-
-                                </th>
-
-                            </tr>
-
-                        </thead>
-
-                        <tbody>
-
-
-                              {results.map((scan) => (
-
-                                <tr
-                                    key={`${scan.symbol}-${scan.playbook}`}
-                                    onClick={() =>
-                                        setSelected(scan)
-                                    }
-                                >
-
-                                    <td>{scan.symbol}</td>
-
-                                    <td>{scan.playbook}</td>
-
-                                    <td>{scan.triggerTime}</td>
-
-                                    <td>{scan.score}</td>
-
-                                    <td>{scan.direction}</td>
-
-                                    <td>
-                                        {scan.entry.toFixed(2)}
-                                    </td>
-
-                                    <td>
-                                        {scan.riskReward.toFixed(2)}
-                                    </td>
-
-                                </tr>
-
-                            ))}
-
-                        </tbody>
-
-                    </table>
-
-                </div>
-
-                <div className="detailsPanel">
-
-                    <div className="panelHeader">
-
-                        Trade Details
-
-                    </div>
-
-                    {selected ? (
-
-                        <>
-
-                            <div className="detail">
-
-                                <label>Symbol</label>
-
-                                <strong>
-
-                                    {selected.symbol}
-
-                                </strong>
-
-                            </div>
-
-                            <div className="detail">
-
-                                <label>Playbook</label>
-
-                                <strong>
-
-                                    {selected.playbook}
-
-                                </strong>
-
-                            </div>
-
-                            <div className="detail">
-
-                                <label>Score</label>
-
-                                <strong>
-
-                                    {selected.score}
-
-                                </strong>
-
-                            </div>
-
-                            <div className="detail">
-
-                                <label>Direction</label>
-
-                                <strong>
-
-                                    {selected.direction}
-
-                                </strong>
-
-                            </div>
-
-                            <div className="detail">
-
-                                <label>Entry</label>
-
-                                <strong>
-
-                                    {selected.entry.toFixed(2)}
-
-                                </strong>
-
-                            </div>
-
-                            <div className="detail">
-
-                                <label>Stop</label>
-
-                                <strong>
-
-                                    {selected.stop.toFixed(2)}
-
-                                </strong>
-
-                            </div>
-
-                            <div className="detail">
-
-                                <label>Target</label>
-
-                                <strong>
-
-                                    {selected.target.toFixed(2)}
-
-                                </strong>
-
-                            </div>
-
-                            <div className="detail">
-
-                                <label>Risk / Reward</label>
-
-                                <strong>
-
-                                    {selected.riskReward.toFixed(2)}
-
-                                </strong>
-
-                            </div>
-
-                        </>
-
-                    ) : (
-
-                        <div
-                            style={{
-                                padding: 20,
-                                color: "#8ea2c7"
-                            }}
-                        >
-
-                            No setup selected.
+                            <strong>{watchlist}</strong>
 
                         </div>
 
+                        <div className="card">
+
+                            <span>Playbooks</span>
+
+                            <strong>{playbooks}</strong>
+
+                        </div>
+
+                        <div className="card">
+
+                            <span>Qualified</span>
+
+                            <strong>{qualified}</strong>
+
+                        </div>
+
+                        <div className="card">
+
+                            <span>Top Score</span>
+
+                            <strong>{topScore}</strong>
+
+                        </div>
+
+                    </section>
+
+                    <section className="content">
+
+                        <div className="tablePanel">
+
+                            <div className="panelHeader">Ranked Setups</div>
+
+                            <table>
+
+                                <thead>
+
+                                    <tr>
+
+                                        <th>Symbol</th>
+
+                                        <th>Playbook</th>
+
+                                        <th>Triggered</th>
+
+                                        <th>Score</th>
+
+                                        <th>Direction</th>
+
+                                        <th>Entry</th>
+
+                                        <th>R:R</th>
+
+                                    </tr>
+
+                                </thead>
+
+                                <tbody>
+
+                                    {results.map(scan => (
+
+                                        <tr
+
+                                            key={`${scan.symbol}-${scan.playbook}`}
+
+                                            onClick={() => setSelectedScan(scan)}
+
+                                        >
+
+                                            <td>{scan.symbol}</td>
+
+                                            <td>{scan.playbook}</td>
+
+                                            <td>{scan.triggerTime}</td>
+
+                                            <td>{scan.score}</td>
+
+                                            <td>{scan.direction}</td>
+
+                                            <td>{scan.entry.toFixed(2)}</td>
+
+                                            <td>{scan.riskReward.toFixed(2)}</td>
+
+                                        </tr>
+
+                                    ))}
+
+                                </tbody>
+
+                            </table>
+
+                        </div>
+
+                        <div className="detailsPanel">
+
+                            <div className="panelHeader">Trade Details</div>
+
+                            {selectedScan ? (
+
+                                <>
+
+                                    <div className="detail">
+
+                                        <label>Symbol</label>
+
+                                        <strong>{selectedScan.symbol}</strong>
+
+                                    </div>
+
+                                    <div className="detail">
+
+                                        <label>Playbook</label>
+
+                                        <strong>{selectedScan.playbook}</strong>
+
+                                    </div>
+
+                                    <div className="detail">
+
+                                        <label>Score</label>
+
+                                        <strong>{selectedScan.score}</strong>
+
+                                    </div>
+
+                                    <div className="detail">
+
+                                        <label>Direction</label>
+
+                                        <strong>{selectedScan.direction}</strong>
+
+                                    </div>
+
+                                    <div className="detail">
+
+                                        <label>Entry</label>
+
+                                        <strong>{selectedScan.entry.toFixed(2)}</strong>
+
+                                    </div>
+
+                                    <div className="detail">
+
+                                        <label>Stop</label>
+
+                                        <strong>{selectedScan.stop.toFixed(2)}</strong>
+
+                                    </div>
+
+                                    <div className="detail">
+
+                                        <label>Target</label>
+
+                                        <strong>{selectedScan.target.toFixed(2)}</strong>
+
+                                    </div>
+
+                                    <div className="detail">
+
+                                        <label>Risk / Reward</label>
+
+                                        <strong>{selectedScan.riskReward.toFixed(2)}</strong>
+
+                                    </div>
+
+                                </>
+
+                            ) : (
+
+                                <div style={{ padding: 20, color: "#8ea2c7" }}>
+
+                                    No setup selected.
+
+                                </div>
+
+                            )}
+
+                        </div>
+
+                    </section>
+
+                </>
+
+            )}
+
+            {tab === "swing" && (
+
+                <>
+
+                    <section className="summary">
+
+                        <div className="card">
+
+                            <span>Watchlist</span>
+
+                            <strong>{watchlist}</strong>
+
+                        </div>
+
+                        <div className="card">
+
+                            <span>Qualified</span>
+
+                            <strong>{swingQualified}</strong>
+
+                        </div>
+
+                        <div className="card">
+
+                            <span>Watching</span>
+
+                            <strong>{swingWatching}</strong>
+
+                        </div>
+
+                        <div className="card">
+
+                            <span>Top Score</span>
+
+                            <strong>{topSwingScore}</strong>
+
+                        </div>
+
+                    </section>
+
+                    <div className="filters">
+
+                        <button
+
+                            className={`filterBtn ${swingFilter === "ALL" ? "active" : ""}`}
+
+                            onClick={() => setSwingFilter("ALL")}
+
+                        >
+
+                            All
+
+                        </button>
+
+                        <button
+
+                            className={`filterBtn ${swingFilter === "SHORT" ? "active" : ""}`}
+
+                            onClick={() => setSwingFilter("SHORT")}
+
+                        >
+
+                            1–3 Day
+
+                        </button>
+
+                        <button
+
+                            className={`filterBtn ${swingFilter === "INTERMEDIATE" ? "active" : ""}`}
+
+                            onClick={() => setSwingFilter("INTERMEDIATE")}
+
+                        >
+
+                            1–3 Week
+
+                        </button>
+
+                    </div>
+
+                    <section className="content">
+
+                        <div className="tablePanel">
+
+                            <div className="panelHeader">Swing Setups</div>
+
+                            <table>
+
+                                <thead>
+
+                                    <tr>
+
+                                        <th>Symbol</th>
+
+                                        <th>Horizon</th>
+
+                                        <th>State</th>
+
+                                        <th>Score</th>
+
+                                        <th>RS Rank</th>
+
+                                        <th>Entry</th>
+
+                                        <th>R:R</th>
+
+                                    </tr>
+
+                                </thead>
+
+                                <tbody>
+
+                                    {filteredSwing.map(row => (
+
+                                        <tr
+
+                                            key={`${row.symbol}-${row.horizonId}`}
+
+                                            onClick={() => setSelectedSwing(row)}
+
+                                        >
+
+                                            <td>{row.symbol}</td>
+
+                                            <td>
+
+                                                <span
+
+                                                    className={
+
+                                                        row.horizonId === "SHORT"
+
+                                                            ? "badge badge-short"
+
+                                                            : "badge badge-intermediate"
+
+                                                    }
+
+                                                >
+
+                                                    {horizonLabel(row.horizonId)}
+
+                                                </span>
+
+                                            </td>
+
+                                            <td>
+
+                                                <span
+
+                                                    className={
+
+                                                        row.qualified
+
+                                                            ? "badge badge-qualified"
+
+                                                            : "badge badge-state"
+
+                                                    }
+
+                                                >
+
+                                                    {row.state}
+
+                                                </span>
+
+                                            </td>
+
+                                            <td>{row.score}</td>
+
+                                            <td>#{row.rsRank || "—"}</td>
+
+                                            <td>
+
+                                                {row.entry
+
+                                                    ? row.entry.toFixed(2)
+
+                                                    : "—"}
+
+                                            </td>
+
+                                            <td>
+
+                                                {row.riskReward
+
+                                                    ? row.riskReward.toFixed(2)
+
+                                                    : "—"}
+
+                                            </td>
+
+                                        </tr>
+
+                                    ))}
+
+                                </tbody>
+
+                            </table>
+
+                        </div>
+
+                        <div className="detailsPanel">
+
+                            <div className="panelHeader">Swing Details</div>
+
+                            {selectedSwing ? (
+
+                                <>
+
+                                    <div className="detail">
+
+                                        <label>Symbol</label>
+
+                                        <strong>{selectedSwing.symbol}</strong>
+
+                                    </div>
+
+                                    <div className="detail">
+
+                                        <label>Horizon</label>
+
+                                        <strong>{horizonLabel(selectedSwing.horizonId)}</strong>
+
+                                    </div>
+
+                                    <div className="detail">
+
+                                        <label>State</label>
+
+                                        <strong>{selectedSwing.state}</strong>
+
+                                    </div>
+
+                                    <div className="detail">
+
+                                        <label>Score</label>
+
+                                        <strong>{selectedSwing.score}</strong>
+
+                                    </div>
+
+                                    <div className="detail">
+
+                                        <label>RS Rank</label>
+
+                                        <strong>
+
+                                            #{selectedSwing.rsRank}{" "}
+
+                                            ({(selectedSwing.rs * 100).toFixed(1)}% vs SPY)
+
+                                        </strong>
+
+                                    </div>
+
+                                    <div className="detail">
+
+                                        <label>Entry</label>
+
+                                        <strong>
+
+                                            {selectedSwing.entry
+
+                                                ? selectedSwing.entry.toFixed(2)
+
+                                                : "—"}
+
+                                        </strong>
+
+                                    </div>
+
+                                    <div className="detail">
+
+                                        <label>Stop</label>
+
+                                        <strong>
+
+                                            {selectedSwing.stop
+
+                                                ? selectedSwing.stop.toFixed(2)
+
+                                                : "—"}
+
+                                        </strong>
+
+                                    </div>
+
+                                    <div className="detail">
+
+                                        <label>Target</label>
+
+                                        <strong>
+
+                                            {selectedSwing.target
+
+                                                ? selectedSwing.target.toFixed(2)
+
+                                                : "—"}
+
+                                        </strong>
+
+                                    </div>
+
+                                    <div className="detail">
+
+                                        <label>Risk / Reward</label>
+
+                                        <strong>
+
+                                            {selectedSwing.riskReward
+
+                                                ? selectedSwing.riskReward.toFixed(2)
+
+                                                : "—"}
+
+                                        </strong>
+
+                                    </div>
+
+                                    <div className="detail">
+
+                                        <label>Reason</label>
+
+                                        <strong>{selectedSwing.reason}</strong>
+
+                                    </div>
+
+                                </>
+
+                            ) : (
+
+                                <div style={{ padding: 20, color: "#8ea2c7" }}>
+
+                                    No swing selected.
+
+                                </div>
+
+                            )}
+
+                        </div>
+
+                    </section>
+
+                </>
+
+            )}
+
+            {tab === "rvol" && (
+
+                <section className="rvolPanel">
+
+                    <div className="panelHeader rvolHeader">
+
+                        <span>Highest RVOL (Live)</span>
+
+                        <span className="rvolMeta">
+
+                            {lastRvol
+
+                                ? `Updated ${lastRvol} · every 15 min`
+
+                                : "every 15 min"}
+
+                        </span>
+
+                    </div>
+
+                    {rvolLive.length === 0 ? (
+
+                        <div className="rvolEmpty">No RVOL data yet.</div>
+
+                    ) : (
+
+                        <table>
+
+                            <thead>
+
+                                <tr>
+
+                                    <th>#</th>
+
+                                    <th>Symbol</th>
+
+                                    <th>RVOL</th>
+
+                                    <th>Volume</th>
+
+                                    <th>Avg 10D</th>
+
+                                    <th>Last</th>
+
+                                    <th>Change</th>
+
+                                </tr>
+
+                            </thead>
+
+                            <tbody>
+
+                                {rvolLive.map((row, index) => (
+
+                                    <tr key={row.symbol}>
+
+                                        <td>{index + 1}</td>
+
+                                        <td>{row.symbol}</td>
+
+                                        <td className="rvolValue">
+
+                                            {row.rvol.toFixed(2)}x
+
+                                        </td>
+
+                                        <td>{formatVolume(row.totalVolume)}</td>
+
+                                        <td>{formatVolume(row.avg10DaysVolume)}</td>
+
+                                        <td>{row.lastPrice.toFixed(2)}</td>
+
+                                        <td
+
+                                            className={
+
+                                                row.netPercentChange >= 0
+
+                                                    ? "pos"
+
+                                                    : "neg"
+
+                                            }
+
+                                        >
+
+                                            {row.netPercentChange >= 0 ? "+" : ""}
+
+                                            {row.netPercentChange.toFixed(2)}%
+
+                                        </td>
+
+                                    </tr>
+
+                                ))}
+
+                            </tbody>
+
+                        </table>
+
                     )}
 
-                </div>
+                </section>
 
-            </section>
+            )}
 
         </div>
 
