@@ -2,7 +2,7 @@
  * Sniper
  * Broker Development Kit Client
  *
- * Version: 0.7
+ * Version: 0.8
  *
  * Purpose:
  * Retrieve market data from the BDK.
@@ -83,7 +83,6 @@ export class BDKClient {
             now.getTime().toString()
         );
 
-        // Intraday requires periodType=day (Schwab default)
         url.searchParams.set(
             "periodType",
             "day"
@@ -111,16 +110,16 @@ export class BDKClient {
     //--------------------------------------------------
     // Daily history (for swing RS / trend / pullback)
     //
-    // Schwab rule: frequencyType=daily is invalid with
-    // periodType=day. Use periodType=year (or month).
+    // BDK/Schwab: daily bars work with periodType + period.
+    // startDate/endDate + daily currently 500s on the worker.
     //--------------------------------------------------
 
     async getDailyHistory(
 
         symbol: string,
 
-        /** Calendar days of history to request */
-        lookbackDays = 180
+        /** Months of daily history (1, 2, 3, or 6) */
+        months: 1 | 2 | 3 | 6 = 6
 
     ): Promise<Candle[]> {
 
@@ -130,28 +129,16 @@ export class BDKClient {
                 this.baseUrl
             );
 
-        const now = new Date();
-
-        const start = new Date(now);
-
-        start.setDate(start.getDate() - lookbackDays);
-
         url.searchParams.set("symbol", symbol);
 
         url.searchParams.set(
-            "startDate",
-            start.getTime().toString()
-        );
-
-        url.searchParams.set(
-            "endDate",
-            now.getTime().toString()
-        );
-
-        // Required for daily bars
-        url.searchParams.set(
             "periodType",
-            "year"
+            "month"
+        );
+
+        url.searchParams.set(
+            "period",
+            String(months)
         );
 
         url.searchParams.set(
