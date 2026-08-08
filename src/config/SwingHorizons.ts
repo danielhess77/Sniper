@@ -2,7 +2,7 @@
  * Sniper
  * Swing Horizon Config
  *
- * Version: 1.0
+ * Version: 1.1
  *
  * Locked parameters for Short (1–3 day) and Intermediate (1–3 week) swings.
  */
@@ -33,6 +33,9 @@ export interface SwingHorizonConfig {
     /** EMA period for primary trend */
     trendEmaPeriod: number;
 
+    /** Max target distance as multiple of daily ATR(14) */
+    atrTargetMultiple: number;
+
 }
 
 export const SWING_SHORT: SwingHorizonConfig = {
@@ -51,7 +54,9 @@ export const SWING_SHORT: SwingHorizonConfig = {
 
     useSoft50Filter: false,
 
-    trendEmaPeriod: 20
+    trendEmaPeriod: 20,
+
+    atrTargetMultiple: 2.5
 
 };
 
@@ -71,7 +76,9 @@ export const SWING_INTERMEDIATE: SwingHorizonConfig = {
 
     useSoft50Filter: true,
 
-    trendEmaPeriod: 20
+    trendEmaPeriod: 20,
+
+    atrTargetMultiple: 2.5
 
 };
 

@@ -2,10 +2,12 @@
  * Sniper
  * Swing Playbook
  *
- * Version: 1.0
+ * Version: 1.1
  *
  * One playbook, two horizons via SwingHorizonConfig.
  * Longs only in v1.
+ *
+ * Target = min(measured-move impulse, entry + atrTargetMultiple * ATR14)
  */
 
 import { Candle } from "../core/BDKClient.js";
@@ -49,9 +51,13 @@ export interface SwingResult {
 
     rsPercentile: number;
 
+    atr: number;
+
 }
 
 export class SwingPlaybook {
+
+    private static readonly ATR_PERIOD = 14;
 
     private trendEngine =
         new SwingTrendEngine();
@@ -74,6 +80,9 @@ export class SwingPlaybook {
         rs: RsCard | null
 
     ): SwingResult {
+
+        const atr =
+            this.atr(dailyCandles, SwingPlaybook.ATR_PERIOD);
 
         const base = (
 
@@ -111,7 +120,9 @@ export class SwingPlaybook {
 
             rs: rs?.rs ?? 0,
 
-            rsPercentile: rs?.percentile ?? 0
+            rsPercentile: rs?.percentile ?? 0,
+
+            atr
 
         });
 
@@ -228,15 +239,26 @@ export class SwingPlaybook {
 
         }
 
-        // Geometry: stop under pullback low, target = entry + impulse size
+        // Geometry: stop under pullback low
+        // Target = min(measured move, entry + 2.5 * ATR)
         const entry =
             pullback.entry;
 
         const stop =
             pullback.pullbackLow;
 
-        const target =
+        const measuredMoveTarget =
             entry + pullback.impulseSize;
+
+        const atrCapTarget =
+            atr > 0
+
+                ? entry + horizon.atrTargetMultiple * atr
+
+                : measuredMoveTarget;
+
+        const target =
+            Math.min(measuredMoveTarget, atrCapTarget);
 
         const risk =
             this.riskEngine.evaluateTrade(
@@ -293,6 +315,62 @@ export class SwingPlaybook {
 
     }
 
+    private atr(
+
+        candles: Candle[],
+
+        period: number
+
+    ): number {
+
+        if (candles.length < period + 1) {
+
+            return 0;
+
+        }
+
+        const trs: number[] = [];
+
+        for (let i = 1; i < candles.length; i++) {
+
+            const c = candles[i];
+
+            const prev = candles[i - 1];
+
+            const tr = Math.max(
+
+                c.high - c.low,
+
+                Math.abs(c.high - prev.close),
+
+                Math.abs(c.low - prev.close)
+
+            );
+
+            trs.push(tr);
+
+        }
+
+        if (trs.length < period) {
+
+            return 0;
+
+        }
+
+        // Wilder ATR: SMA seed, then smoothed
+        let atr =
+            trs.slice(0, period).reduce((a, b) => a + b, 0) / period;
+
+        for (let i = period; i < trs.length; i++) {
+
+            atr = (atr * (period - 1) + trs[i]) / period;
+
+        }
+
+        return atr;
+
+    }
+
     private score(
 
         trend: SwingTrendResult,
@@ -309,7 +387,6 @@ export class SwingPlaybook {
 
         let total = 0;
 
-        // Trend quality 25
         if (trend.valid) {
 
             total += 20;
@@ -318,14 +395,12 @@ export class SwingPlaybook {
 
         }
 
-        // RS rank 25 — higher rank = higher score
         total += Math.round(
 
             (rs.percentile / 100) * 25
 
         );
 
-        // Pullback quality 20
         if (pullback.hasPullback) {
 
             total += 12;
@@ -338,14 +413,12 @@ export class SwingPlaybook {
 
         }
 
-        // Trigger 15
         if (triggered && pullback.triggered) {
 
             total += 15;
 
         }
 
-        // R:R 15
         if (risk.valid) {
 
             if (risk.riskReward >= 2.5) total += 15;
@@ -423,6 +496,20 @@ export class SwingPlaybook {
                 : "Waiting",
 
             result.pullback.reason
+
+        );
+
+        this.traceEngine.addInfo(
+
+            "ATR(14)",
+
+            result.atr > 0
+
+                ? result.atr.toFixed(2)
+
+                : "—",
+
+            "Target capped at 2.5 × ATR"
 
         );
 
