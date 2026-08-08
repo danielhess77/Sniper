@@ -2,27 +2,127 @@
  * Sniper
  * Option Select Engine
  *
- * Version: 1.0
+ * Version: 2.0
  *
- * For long premium directional trades:
- * BULLISH → CALL, BEARISH → PUT
- * Prefer liquid contracts in a practical delta band.
+ * Long premium only.
+ * Profiles:
+ *  - 0DTE / nearest: Δ 0.35–0.50, spread ≤12%, OI ≥50
+ *  - SHORT swing: DTE 5–10, Δ 0.40–0.55
+ *  - INTERMEDIATE swing: DTE 21–35, Δ 0.35–0.50, spread ≤15%, OI ≥100
  */
 
-import { BDKClient, OptionContract } from "../core/BDKClient.js";
+import { BDKClient, OptionChainResult, OptionContract } from "../core/BDKClient.js";
 import type { OptionSuggestion } from "../types.js";
+
+export type OptionProfileId = "ZERO_DTE" | "SWING_SHORT" | "SWING_INTERMEDIATE";
+
+interface OptionProfile {
+
+    id: OptionProfileId;
+
+    side: "CALL" | "PUT" | "FROM_DIRECTION";
+
+    dteMin: number;
+
+    dteMax: number;
+
+    /** Prefer expiry closest to this DTE when several fall in band */
+    dteTarget: number;
+
+    deltaMin: number;
+
+    deltaMax: number;
+
+    deltaIdeal: number;
+
+    maxSpreadPct: number;
+
+    minOi: number;
+
+}
+
+const PROFILES: Record<OptionProfileId, OptionProfile> = {
+
+    ZERO_DTE: {
+
+        id: "ZERO_DTE",
+
+        side: "FROM_DIRECTION",
+
+        dteMin: 0,
+
+        dteMax: 3,
+
+        dteTarget: 0,
+
+        deltaMin: 0.35,
+
+        deltaMax: 0.50,
+
+        deltaIdeal: 0.40,
+
+        maxSpreadPct: 0.12,
+
+        minOi: 50
+
+    },
+
+    SWING_SHORT: {
+
+        id: "SWING_SHORT",
+
+        side: "CALL",
+
+        dteMin: 5,
+
+        dteMax: 10,
+
+        dteTarget: 7,
+
+        deltaMin: 0.40,
+
+        deltaMax: 0.55,
+
+        deltaIdeal: 0.45,
+
+        maxSpreadPct: 0.12,
+
+        minOi: 50
+
+    },
+
+    SWING_INTERMEDIATE: {
+
+        id: "SWING_INTERMEDIATE",
+
+        side: "CALL",
+
+        dteMin: 21,
+
+        dteMax: 35,
+
+        dteTarget: 28,
+
+        deltaMin: 0.35,
+
+        deltaMax: 0.50,
+
+        deltaIdeal: 0.40,
+
+        maxSpreadPct: 0.15,
+
+        minOi: 100
+
+    }
+
+};
 
 export class OptionSelectEngine {
 
-    /** Prefer this absolute delta range for directional 0DTE / short-dated */
-    private static readonly DELTA_MIN = 0.35;
+    private static readonly CHAIN_CACHE_MS = 45 * 60_000;
 
-    private static readonly DELTA_MAX = 0.50;
-
-    /** Max (ask - bid) / mid */
-    private static readonly MAX_SPREAD_PCT = 0.12;
-
-    private static readonly MIN_OI = 50;
+    private chainCache =
+        new Map<string, { expiresAt: number; chain: OptionChainResult }>();
 
     constructor(
 
@@ -30,6 +130,7 @@ export class OptionSelectEngine {
 
     ) {}
 
+    /** Intraday / 0DTE directional long call or put */
     async suggest(
 
         underlying: string,
@@ -47,10 +148,44 @@ export class OptionSelectEngine {
         const side: "CALL" | "PUT" =
             direction === "BULLISH" ? "CALL" : "PUT";
 
+        return this.suggestWithProfile(underlying, side, PROFILES.ZERO_DTE);
+
+    }
+
+    /** Swing long call by horizon */
+    async suggestSwing(
+
+        underlying: string,
+
+        horizonId: string
+
+    ): Promise<OptionSuggestion | null> {
+
+        const profile =
+            horizonId === "INTERMEDIATE"
+
+                ? PROFILES.SWING_INTERMEDIATE
+
+                : PROFILES.SWING_SHORT;
+
+        return this.suggestWithProfile(underlying, "CALL", profile);
+
+    }
+
+    private async suggestWithProfile(
+
+        underlying: string,
+
+        side: "CALL" | "PUT",
+
+        profile: OptionProfile
+
+    ): Promise<OptionSuggestion> {
+
         try {
 
             const chain =
-                await this.bdk.getOptionChain(underlying);
+                await this.getChainCached(underlying);
 
             const map =
                 side === "CALL"
@@ -65,19 +200,20 @@ export class OptionSelectEngine {
 
             }
 
-            // Prefer nearest expiration (0DTE when present)
-            const expKeys =
-                Object.keys(map).sort((a, b) => {
+            const expKey =
+                this.pickExpiration(map, profile);
 
-                    const da = Number(a.split(":")[1] ?? 999);
+            if (!expKey) {
 
-                    const db = Number(b.split(":")[1] ?? 999);
+                return this.fail(
 
-                    return da - db;
+                    side,
 
-                });
+                    `No expiry in DTE ${profile.dteMin}–${profile.dteMax}`
 
-            const expKey = expKeys[0];
+                );
+
+            }
 
             const strikeMap = map[expKey];
 
@@ -95,7 +231,7 @@ export class OptionSelectEngine {
 
             const scored =
                 candidates
-                    .map(c => this.scoreContract(c, side))
+                    .map(c => this.scoreContract(c, side, profile))
                     .filter((x): x is NonNullable<typeof x> => x !== null)
                     .sort((a, b) => b.score - a.score);
 
@@ -105,15 +241,13 @@ export class OptionSelectEngine {
 
                     side,
 
-                    "No liquid contract in delta 0.35–0.50 with spread ≤12%"
+                    `No liquid ${side} in Δ ${profile.deltaMin}–${profile.deltaMax}, DTE ${profile.dteMin}–${profile.dteMax}`
 
                 );
 
             }
 
-            const best = scored[0];
-
-            return best.suggestion;
+            return scored[0].suggestion;
 
         } catch (err) {
 
@@ -131,11 +265,104 @@ export class OptionSelectEngine {
 
     }
 
+    private async getChainCached(
+
+        symbol: string
+
+    ): Promise<OptionChainResult> {
+
+        const key = symbol.toUpperCase();
+
+        const hit = this.chainCache.get(key);
+
+        if (hit && hit.expiresAt > Date.now()) {
+
+            return hit.chain;
+
+        }
+
+        const chain =
+            await this.bdk.getOptionChain(key);
+
+        this.chainCache.set(key, {
+
+            expiresAt: Date.now() + OptionSelectEngine.CHAIN_CACHE_MS,
+
+            chain
+
+        });
+
+        return chain;
+
+    }
+
+    private pickExpiration(
+
+        map: Record<string, Record<string, OptionContract[]>>,
+
+        profile: OptionProfile
+
+    ): string | null {
+
+        // Keys like "2026-08-10:2"
+        const scored: { key: string; dte: number; dist: number }[] = [];
+
+        for (const key of Object.keys(map)) {
+
+            const dte = Number(key.split(":")[1] ?? NaN);
+
+            if (Number.isNaN(dte)) continue;
+
+            if (dte < profile.dteMin || dte > profile.dteMax) continue;
+
+            scored.push({
+
+                key,
+
+                dte,
+
+                dist: Math.abs(dte - profile.dteTarget)
+
+            });
+
+        }
+
+        if (!scored.length) {
+
+            // Fallback: nearest overall expiry for ZERO_DTE-style
+            if (profile.id === "ZERO_DTE") {
+
+                const all = Object.keys(map).sort((a, b) => {
+
+                    const da = Number(a.split(":")[1] ?? 999);
+
+                    const db = Number(b.split(":")[1] ?? 999);
+
+                    return da - db;
+
+                });
+
+                return all[0] ?? null;
+
+            }
+
+            return null;
+
+        }
+
+        scored.sort((a, b) => a.dist - b.dist || a.dte - b.dte);
+
+        return scored[0].key;
+
+    }
+
     private scoreContract(
 
         c: OptionContract,
 
-        side: "CALL" | "PUT"
+        side: "CALL" | "PUT",
+
+        profile: OptionProfile
 
     ): { score: number; suggestion: OptionSuggestion } | null {
 
@@ -153,11 +380,13 @@ export class OptionSelectEngine {
 
         if (ask <= 0) return null;
 
-        if (absDelta < OptionSelectEngine.DELTA_MIN) return null;
+        if (absDelta < profile.deltaMin || absDelta > profile.deltaMax) {
 
-        if (absDelta > OptionSelectEngine.DELTA_MAX) return null;
+            return null;
 
-        if (oi < OptionSelectEngine.MIN_OI) return null;
+        }
+
+        if (oi < profile.minOi) return null;
 
         const mid = bid > 0 ? (bid + ask) / 2 : ask;
 
@@ -165,14 +394,15 @@ export class OptionSelectEngine {
 
         const spreadPct = (ask - bid) / mid;
 
-        if (spreadPct > OptionSelectEngine.MAX_SPREAD_PCT) return null;
+        if (spreadPct > profile.maxSpreadPct) return null;
 
-        // Prefer tighter spreads, higher volume, closer to 0.40 delta
+        const deltaRange = profile.deltaMax - profile.deltaMin || 0.15;
+
         const deltaScore =
-            1 - Math.abs(absDelta - 0.40) / 0.15;
+            1 - Math.abs(absDelta - profile.deltaIdeal) / deltaRange;
 
         const spreadScore =
-            1 - spreadPct / OptionSelectEngine.MAX_SPREAD_PCT;
+            1 - spreadPct / profile.maxSpreadPct;
 
         const volumeScore =
             Math.min(1, Math.log10(volume + 1) / 3);
@@ -223,7 +453,8 @@ export class OptionSelectEngine {
 
             volume,
 
-            reason: `Δ ${absDelta.toFixed(2)} · spread ${ (spreadPct * 100).toFixed(1) }% · OI ${oi}`
+            reason:
+                `Δ ${absDelta.toFixed(2)} · spread ${(spreadPct * 100).toFixed(1)}% · OI ${oi} · ${profile.id}`
 
         };
 

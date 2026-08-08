@@ -110,6 +110,8 @@ export interface SwingCard {
 
     reason: string;
 
+    option?: OptionSuggestion | null;
+
 }
 
 export interface SwingResponse {

@@ -2,17 +2,17 @@
  * Sniper
  * Swing Scanner
  *
- * Version: 1.0
+ * Version: 1.1
  *
- * Fetches daily history for the watchlist + SPY,
- * ranks relative strength, evaluates Short + Intermediate
- * swing playbooks.
+ * Qualified setups get a horizon-aware long CALL suggestion.
  */
 
 import { BDKClient, Candle } from "./BDKClient.js";
 import { SWING_HORIZONS } from "../config/SwingHorizons.js";
 import { RelativeStrengthEngine } from "../engines/RelativeStrengthEngine.js";
+import { OptionSelectEngine } from "../engines/OptionSelectEngine.js";
 import { SwingPlaybook, SwingResult } from "../playbooks/SwingPlaybook.js";
+import type { OptionSuggestion } from "../types.js";
 
 export interface SwingCard {
 
@@ -44,6 +44,8 @@ export interface SwingCard {
 
     reason: string;
 
+    option?: OptionSuggestion | null;
+
 }
 
 export class SwingScanner {
@@ -54,11 +56,17 @@ export class SwingScanner {
     private playbook =
         new SwingPlaybook();
 
+    private optionSelect: OptionSelectEngine;
+
     constructor(
 
         private bdk: BDKClient
 
-    ) {}
+    ) {
+
+        this.optionSelect = new OptionSelectEngine(bdk);
+
+    }
 
     async scan(
 
@@ -71,13 +79,11 @@ export class SwingScanner {
         console.log(`Swing scan: ${symbols.length} symbols`);
         console.log("========================================");
 
-        // SPY + universe daily history
         const spyCandles =
             await this.bdk.getDailyHistory("SPY");
 
         const histories: { symbol: string; candles: Candle[] }[] = [];
 
-        // Sequential with small concurrency to respect rate limits
         const batchSize = 5;
 
         for (let i = 0; i < symbols.length; i += batchSize) {
@@ -163,30 +169,6 @@ export class SwingScanner {
 
                     );
 
-                const trace =
-                    this.playbook.trace(result);
-
-                console.log(
-
-                    `${history.symbol} [${horizon.id}] state=${result.state} score=${result.score} RR=${result.risk.riskReward.toFixed(2)}`
-
-                );
-
-                for (const step of trace.steps) {
-
-                    if (step.type === "decision") {
-
-                        console.log(
-
-                            `  ${step.passed ? "✓" : "✗"} ${step.name}: ${step.reason ?? ""}`
-
-                        );
-
-                    }
-
-                }
-
-                // Surface watching + triggered + qualified
                 if (
 
                     result.state === "invalid" &&
@@ -208,9 +190,34 @@ export class SwingScanner {
 
         }
 
+        // Option enrichment: qualified only (shared 45-min chain cache)
+        for (const card of cards) {
+
+            if (!card.qualified) continue;
+
+            try {
+
+                card.option =
+                    await this.optionSelect.suggestSwing(
+
+                        card.symbol,
+
+                        card.horizonId
+
+                    );
+
+            } catch (err) {
+
+                console.error(`Swing option failed: ${card.symbol}`, err);
+
+                card.option = null;
+
+            }
+
+        }
+
         cards.sort((a, b) => {
 
-            // Qualified first, then by score
             if (a.qualified !== b.qualified) {
 
                 return a.qualified ? -1 : 1;
@@ -221,7 +228,6 @@ export class SwingScanner {
 
         });
 
-        console.log("");
         console.log(
 
             `Swing setups returned: ${cards.length} (qualified: ${cards.filter(c => c.qualified).length})`
