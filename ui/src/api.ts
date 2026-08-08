@@ -1,7 +1,5 @@
 /**
  * Sniper UI API
- *
- * Fetches live scan, swing, RVOL, and watchlist from the Sniper backend.
  */
 
 export interface ScanCard {
@@ -113,6 +111,8 @@ export interface RvolCard {
 
     netPercentChange: number;
 
+    mode?: "opening" | "day";
+
 }
 
 export interface RvolResponse {
@@ -151,18 +151,9 @@ const API = "/api";
 
 export async function getScan(): Promise<ScanResponse> {
 
-    const response =
-        await fetch(`${API}/scan`);
+    const response = await fetch(`${API}/scan`);
 
-    if (!response.ok) {
-
-        throw new Error(
-
-            "Unable to reach Sniper API"
-
-        );
-
-    }
+    if (!response.ok) throw new Error("Unable to reach Sniper API");
 
     return response.json();
 
@@ -170,18 +161,9 @@ export async function getScan(): Promise<ScanResponse> {
 
 export async function getSwing(): Promise<SwingResponse> {
 
-    const response =
-        await fetch(`${API}/swing`);
+    const response = await fetch(`${API}/swing`);
 
-    if (!response.ok) {
-
-        throw new Error(
-
-            "Unable to reach Swing endpoint"
-
-        );
-
-    }
+    if (!response.ok) throw new Error("Unable to reach Swing endpoint");
 
     return response.json();
 
@@ -189,18 +171,9 @@ export async function getSwing(): Promise<SwingResponse> {
 
 export async function getRvol(): Promise<RvolResponse> {
 
-    const response =
-        await fetch(`${API}/rvol`);
+    const response = await fetch(`${API}/rvol`);
 
-    if (!response.ok) {
-
-        throw new Error(
-
-            "Unable to reach RVOL endpoint"
-
-        );
-
-    }
+    if (!response.ok) throw new Error("Unable to reach RVOL endpoint");
 
     return response.json();
 
@@ -208,18 +181,9 @@ export async function getRvol(): Promise<RvolResponse> {
 
 export async function getWatchlist(): Promise<WatchlistResponse> {
 
-    const response =
-        await fetch(`${API}/watchlist`);
+    const response = await fetch(`${API}/watchlist`);
 
-    if (!response.ok) {
-
-        throw new Error(
-
-            "Unable to reach Watchlist endpoint"
-
-        );
-
-    }
+    if (!response.ok) throw new Error("Unable to reach Watchlist endpoint");
 
     return response.json();
 
@@ -231,31 +195,21 @@ export async function putWatchlist(
 
 ): Promise<WatchlistResponse> {
 
-    const response =
-        await fetch(`${API}/watchlist`, {
+    const response = await fetch(`${API}/watchlist`, {
 
-            method: "PUT",
+        method: "PUT",
 
-            headers: {
+        headers: { "Content-Type": "application/json" },
 
-                "Content-Type": "application/json"
+        body: JSON.stringify({ symbols })
 
-            },
+    });
 
-            body: JSON.stringify({ symbols })
-
-        });
-
-    const data =
-        await response.json() as WatchlistResponse;
+    const data = await response.json() as WatchlistResponse;
 
     if (!response.ok) {
 
-        throw new Error(
-
-            data.error || "Failed to save watchlist"
-
-        );
+        throw new Error(data.error || "Failed to save watchlist");
 
     }
 
