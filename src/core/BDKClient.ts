@@ -2,7 +2,7 @@
  * Sniper
  * Broker Development Kit Client
  *
- * Version: 0.8
+ * Version: 0.9
  *
  * Purpose:
  * Retrieve market data from the BDK.
@@ -44,7 +44,7 @@ export class BDKClient {
         "https://bdk.daniel-hess7.workers.dev";
 
     //--------------------------------------------------
-    // Intraday history (today)
+    // Intraday history (today only — startDate/endDate)
     //--------------------------------------------------
 
     async getHistory(
@@ -108,17 +108,69 @@ export class BDKClient {
     }
 
     //--------------------------------------------------
-    // Daily history (for swing RS / trend / pullback)
-    //
-    // BDK/Schwab: daily bars work with periodType + period.
-    // startDate/endDate + daily currently 500s on the worker.
+    // Multi-day minute history (for opening-range RVOL)
+    // periodType=day + period (1–10) — no start/end dates
+    //--------------------------------------------------
+
+    async getMinuteHistory(
+
+        symbol: string,
+
+        /** Trading days of minute bars (Schwab allows up to 10) */
+        days: number = 10,
+
+        frequency = "5"
+
+    ): Promise<Candle[]> {
+
+        const url =
+            new URL(
+                "/history",
+                this.baseUrl
+            );
+
+        const period =
+            Math.min(10, Math.max(1, Math.floor(days)));
+
+        url.searchParams.set("symbol", symbol);
+
+        url.searchParams.set(
+            "periodType",
+            "day"
+        );
+
+        url.searchParams.set(
+            "period",
+            String(period)
+        );
+
+        url.searchParams.set(
+            "frequencyType",
+            "minute"
+        );
+
+        url.searchParams.set(
+            "frequency",
+            frequency
+        );
+
+        url.searchParams.set(
+            "needExtendedHoursData",
+            "false"
+        );
+
+        return this.fetchCandles(url);
+
+    }
+
+    //--------------------------------------------------
+    // Daily history (swing)
     //--------------------------------------------------
 
     async getDailyHistory(
 
         symbol: string,
 
-        /** Months of daily history (1, 2, 3, or 6) */
         months: 1 | 2 | 3 | 6 = 6
 
     ): Promise<Candle[]> {

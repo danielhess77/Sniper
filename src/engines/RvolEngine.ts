@@ -2,17 +2,19 @@
  * Sniper
  * Relative Volume Engine
  *
- * Version: 1.1
+ * Version: 2.0
  *
- * RVOL = totalVolume / avg10DaysVolume
+ * Two modes:
  *
- * Rate-limit friendly:
- * - One batch quotes call for the entire watchlist
- * - 15-minute in-memory cache (matches UI poll)
- * - Still captures a frozen ranking once session is >= 30 min after open
+ * 1) Opening RVOL (true early-session) — once after 10:00 ET
+ *    RVOL = volume[9:30–10:00 today] / avg volume[9:30–10:00] prior sessions
+ *    Uses multi-day 5-min bars. Result is frozen for the day.
+ *
+ * 2) Live day RVOL — every 30 minutes
+ *    RVOL = totalVolume / avg10DaysVolume (quotes batch)
  */
 
-import { BDKClient, QuoteSnapshot } from "../core/BDKClient.js";
+import { BDKClient, Candle, QuoteSnapshot } from "../core/BDKClient.js";
 
 export interface RvolCard {
 
@@ -27,6 +29,9 @@ export interface RvolCard {
     lastPrice: number;
 
     netPercentChange: number;
+
+    /** opening = true first-30 RVOL; day = cumulative day formula */
+    mode: "opening" | "day";
 
 }
 
@@ -50,24 +55,29 @@ export interface RvolResult {
 
 export class RvolEngine {
 
-    // 15 minutes — one Schwab quotes call per interval
-    private static readonly CACHE_MS = 15 * 60_000;
+    /** Live day-RVOL cache (quotes) */
+    private static readonly LIVE_CACHE_MS = 30 * 60_000;
 
     private static readonly TOP_N = 10;
 
-    private cache:
+    /** Prior sessions used for OR average */
+    private static readonly OR_LOOKBACK_DAYS = 10;
+
+    private liveCache:
         | {
             expiresAt: number;
             fetchedAt: string;
             live: RvolCard[];
-            sessionMinute: number;
         }
         | null = null;
 
     private opening30Snapshot: {
         dateKey: string;
         cards: RvolCard[];
+        builtAt: string;
     } | null = null;
+
+    private openingInFlight: Promise<RvolCard[]> | null = null;
 
     constructor(
 
@@ -92,62 +102,7 @@ export class RvolEngine {
         const dateKey =
             this.getEasternDateKey(now);
 
-        // Serve cache when fresh
-        if (
-
-            this.cache &&
-            this.cache.expiresAt > Date.now()
-
-        ) {
-
-            return {
-
-                success: true,
-
-                timestamp: this.cache.fetchedAt,
-
-                sessionMinute,
-
-                afterOpen30,
-
-                cached: true,
-
-                live: this.cache.live,
-
-                opening30:
-                    this.opening30Snapshot?.dateKey === dateKey
-
-                        ? this.opening30Snapshot.cards
-
-                        : null
-
-            };
-
-        }
-
-        const quotes =
-            await this.bdk.getQuotes(symbols);
-
-        const live =
-            this.rank(quotes);
-
-        const fetchedAt =
-            now.toISOString();
-
-        this.cache = {
-
-            expiresAt:
-                Date.now() + RvolEngine.CACHE_MS,
-
-            fetchedAt,
-
-            live,
-
-            sessionMinute
-
-        };
-
-        // Freeze ranking once we are past 10:00 ET (30 min after open)
+        // Build true opening RVOL once per day after 10:00 ET
         if (
 
             afterOpen30 &&
@@ -158,15 +113,95 @@ export class RvolEngine {
 
         ) {
 
-            this.opening30Snapshot = {
+            if (!this.openingInFlight) {
 
-                dateKey,
+                this.openingInFlight =
+                    this.buildOpeningRvol(symbols)
+                        .finally(() => {
 
-                cards: live
+                            this.openingInFlight = null;
+
+                        });
+
+            }
+
+            try {
+
+                const cards =
+                    await this.openingInFlight;
+
+                this.opening30Snapshot = {
+
+                    dateKey,
+
+                    cards,
+
+                    builtAt: new Date().toISOString()
+
+                };
+
+            } catch (err) {
+
+                console.error("Opening RVOL build failed", err);
+
+            }
+
+        }
+
+        const opening30 =
+            this.opening30Snapshot?.dateKey === dateKey
+
+                ? this.opening30Snapshot.cards
+
+                : null;
+
+        // Live day RVOL from quotes (30-min cache)
+        if (
+
+            this.liveCache &&
+            this.liveCache.expiresAt > Date.now()
+
+        ) {
+
+            return {
+
+                success: true,
+
+                timestamp: this.liveCache.fetchedAt,
+
+                sessionMinute,
+
+                afterOpen30,
+
+                cached: true,
+
+                live: this.liveCache.live,
+
+                opening30
 
             };
 
         }
+
+        const quotes =
+            await this.bdk.getQuotes(symbols);
+
+        const live =
+            this.rankDayRvol(quotes);
+
+        const fetchedAt =
+            now.toISOString();
+
+        this.liveCache = {
+
+            expiresAt:
+                Date.now() + RvolEngine.LIVE_CACHE_MS,
+
+            fetchedAt,
+
+            live
+
+        };
 
         return {
 
@@ -182,18 +217,223 @@ export class RvolEngine {
 
             live,
 
-            opening30:
-                this.opening30Snapshot?.dateKey === dateKey
-
-                    ? this.opening30Snapshot.cards
-
-                    : null
+            opening30
 
         };
 
     }
 
-    private rank(
+    //--------------------------------------------------
+    // True opening-range RVOL
+    //--------------------------------------------------
+
+    private async buildOpeningRvol(
+
+        symbols: string[]
+
+    ): Promise<RvolCard[]> {
+
+        console.log("");
+        console.log("=== Building true Opening RVOL (9:30–10:00) ===");
+
+        const todayKey =
+            this.getEasternDateKey(new Date());
+
+        const cards: RvolCard[] = [];
+
+        const batchSize = 3;
+
+        for (let i = 0; i < symbols.length; i += batchSize) {
+
+            const batch =
+                symbols.slice(i, i + batchSize);
+
+            const results =
+                await Promise.all(
+
+                    batch.map(async symbol => {
+
+                        try {
+
+                            const candles =
+                                await this.bdk.getMinuteHistory(
+
+                                    symbol,
+
+                                    RvolEngine.OR_LOOKBACK_DAYS,
+
+                                    "5"
+
+                                );
+
+                            return this.openingCardFromMinutes(
+
+                                symbol,
+
+                                candles,
+
+                                todayKey
+
+                            );
+
+                        } catch (err) {
+
+                            console.error(
+
+                                `Opening RVOL failed: ${symbol}`,
+
+                                err
+
+                            );
+
+                            return null;
+
+                        }
+
+                    })
+
+                );
+
+            for (const card of results) {
+
+                if (card) {
+
+                    cards.push(card);
+
+                }
+
+            }
+
+        }
+
+        cards.sort((a, b) => b.rvol - a.rvol);
+
+        console.log(
+
+            `Opening RVOL ranked ${cards.length} symbols`
+
+        );
+
+        return cards.slice(0, RvolEngine.TOP_N);
+
+    }
+
+    private openingCardFromMinutes(
+
+        symbol: string,
+
+        candles: Candle[],
+
+        todayKey: string
+
+    ): RvolCard | null {
+
+        // dateKey -> volume in 9:30–10:00 ET
+        const orByDay =
+            new Map<string, number>();
+
+        for (const c of candles) {
+
+            if (!c.volume || c.volume <= 0) {
+
+                continue;
+
+            }
+
+            const parts =
+                this.easternParts(c.datetime);
+
+            if (!parts) {
+
+                continue;
+
+            }
+
+            const { dateKey, minutesFromMidnight } = parts;
+
+            // Regular session open window: 9:30 (570) inclusive → 10:00 (600) exclusive
+            if (
+
+                minutesFromMidnight < 570 ||
+                minutesFromMidnight >= 600
+
+            ) {
+
+                continue;
+
+            }
+
+            orByDay.set(
+
+                dateKey,
+
+                (orByDay.get(dateKey) ?? 0) + c.volume
+
+            );
+
+        }
+
+        const todayOr =
+            orByDay.get(todayKey) ?? 0;
+
+        const prior: number[] = [];
+
+        for (const [day, vol] of orByDay) {
+
+            if (day === todayKey) {
+
+                continue;
+
+            }
+
+            if (vol > 0) {
+
+                prior.push(vol);
+
+            }
+
+        }
+
+        if (todayOr <= 0 || prior.length < 3) {
+
+            return null;
+
+        }
+
+        const avgOr =
+            prior.reduce((a, b) => a + b, 0) / prior.length;
+
+        if (avgOr <= 0) {
+
+            return null;
+
+        }
+
+        return {
+
+            symbol,
+
+            rvol: todayOr / avgOr,
+
+            totalVolume: todayOr,
+
+            avg10DaysVolume: avgOr,
+
+            lastPrice: 0,
+
+            netPercentChange: 0,
+
+            mode: "opening"
+
+        };
+
+    }
+
+    //--------------------------------------------------
+    // Live day RVOL (quotes)
+    //--------------------------------------------------
+
+    private rankDayRvol(
 
         quotes: QuoteSnapshot[]
 
@@ -227,7 +467,9 @@ export class RvolEngine {
 
                 lastPrice: q.lastPrice,
 
-                netPercentChange: q.netPercentChange
+                netPercentChange: q.netPercentChange,
+
+                mode: "day"
 
             });
 
@@ -249,10 +491,10 @@ export class RvolEngine {
 
     }
 
-    /**
-     * Minutes since 9:30 AM Eastern.
-     * Negative before the open.
-     */
+    //--------------------------------------------------
+    // Time helpers (America/New_York)
+    //--------------------------------------------------
+
     private getSessionMinute(
 
         date: Date
@@ -290,7 +532,10 @@ export class RvolEngine {
 
         );
 
-        return (hours * 60 + minutes) - 570;
+        // Handle 24:00 edge from some engines
+        const h = hours === 24 ? 0 : hours;
+
+        return (h * 60 + minutes) - 570;
 
     }
 
@@ -317,6 +562,88 @@ export class RvolEngine {
             }
 
         ).format(date);
+
+    }
+
+    private easternParts(
+
+        datetimeMs: number
+
+    ): { dateKey: string; minutesFromMidnight: number } | null {
+
+        const date = new Date(datetimeMs);
+
+        if (Number.isNaN(date.getTime())) {
+
+            return null;
+
+        }
+
+        const parts =
+            new Intl.DateTimeFormat(
+
+                "en-US",
+
+                {
+
+                    timeZone: "America/New_York",
+
+                    year: "numeric",
+
+                    month: "2-digit",
+
+                    day: "2-digit",
+
+                    hour: "2-digit",
+
+                    minute: "2-digit",
+
+                    hour12: false
+
+                }
+
+            ).formatToParts(date);
+
+        const year =
+            parts.find(p => p.type === "year")?.value;
+
+        const month =
+            parts.find(p => p.type === "month")?.value;
+
+        const day =
+            parts.find(p => p.type === "day")?.value;
+
+        let hours = Number(
+
+            parts.find(p => p.type === "hour")?.value
+
+        );
+
+        const minutes = Number(
+
+            parts.find(p => p.type === "minute")?.value
+
+        );
+
+        if (hours === 24) {
+
+            hours = 0;
+
+        }
+
+        if (!year || !month || !day) {
+
+            return null;
+
+        }
+
+        return {
+
+            dateKey: `${year}-${month}-${day}`,
+
+            minutesFromMidnight: hours * 60 + minutes
+
+        };
 
     }
 
