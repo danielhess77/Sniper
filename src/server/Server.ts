@@ -1,7 +1,7 @@
 /**
- * Sniper Server v2.3
+ * Sniper Server v2.4
  *
- * Express API: 0DTE scan + RVOL + Swing scanner.
+ * Express API: 0DTE scan + RVOL + Swing + Watchlist editor.
  */
 
 import express from "express";
@@ -12,7 +12,7 @@ import { Scanner } from "../core/Scanner.js";
 import { SwingScanner } from "../core/SwingScanner.js";
 import { RvolEngine } from "../engines/RvolEngine.js";
 
-import { WATCHLIST } from "../config/Watchlist.js";
+import { watchlistStore } from "../config/WatchlistStore.js";
 
 import { TrendContinuation } from "../playbooks/TrendContinuation.js";
 import { OpeningRangeBreakout } from "../playbooks/OpeningRangeBreakout.js";
@@ -22,6 +22,11 @@ import { FirstPullback } from "../playbooks/FirstPullback.js";
 const app = express();
 
 app.use(cors());
+
+app.use(express.json({ limit: "32kb" }));
+
+// Load watchlist from data/watchlist.json (or seed defaults)
+watchlistStore.load();
 
 const bdk = new BDKClient();
 
@@ -63,9 +68,97 @@ app.get(
 
             status: "ok",
 
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
+
+            watchlist: watchlistStore.count()
 
         });
+
+    }
+
+);
+
+//--------------------------------------------------
+// Watchlist editor
+//--------------------------------------------------
+
+app.get(
+
+    "/watchlist",
+
+    (_, res) => {
+
+        const symbols =
+            watchlistStore.get();
+
+        res.json({
+
+            success: true,
+
+            timestamp: new Date().toISOString(),
+
+            count: symbols.length,
+
+            symbols
+
+        });
+
+    }
+
+);
+
+app.put(
+
+    "/watchlist",
+
+    (req, res) => {
+
+        try {
+
+            const body =
+                req.body as { symbols?: unknown };
+
+            const symbols =
+                watchlistStore.save(body?.symbols);
+
+            console.log(
+
+                `Watchlist updated: ${symbols.length} symbols`
+
+            );
+
+            res.json({
+
+                success: true,
+
+                timestamp: new Date().toISOString(),
+
+                count: symbols.length,
+
+                symbols
+
+            });
+
+        } catch (error) {
+
+            console.error(error);
+
+            res.status(400).json({
+
+                success: false,
+
+                timestamp: new Date().toISOString(),
+
+                error:
+                    error instanceof Error
+
+                        ? error.message
+
+                        : "Invalid watchlist"
+
+            });
+
+        }
 
     }
 
@@ -83,8 +176,11 @@ app.get(
 
         try {
 
+            const list =
+                watchlistStore.get();
+
             const results =
-                await scanner.scan(WATCHLIST);
+                await scanner.scan(list);
 
             results.sort(
 
@@ -109,7 +205,7 @@ app.get(
                     new Date().toISOString(),
 
                 watchlist:
-                    WATCHLIST.length,
+                    list.length,
 
                 playbooks: 4,
 
@@ -162,8 +258,11 @@ app.get(
 
         try {
 
+            const list =
+                watchlistStore.get();
+
             const results =
-                await swingScanner.scan(WATCHLIST);
+                await swingScanner.scan(list);
 
             const qualified =
                 results.filter(r => r.qualified).length;
@@ -179,7 +278,7 @@ app.get(
                     new Date().toISOString(),
 
                 watchlist:
-                    WATCHLIST.length,
+                    list.length,
 
                 total: results.length,
 
@@ -231,8 +330,11 @@ app.get(
 
         try {
 
+            const list =
+                watchlistStore.get();
+
             const result =
-                await rvolEngine.evaluate(WATCHLIST);
+                await rvolEngine.evaluate(list);
 
             res.json(result);
 
@@ -280,7 +382,7 @@ app.listen(
 
         console.log("====================================");
 
-        console.log("        SNIPER API v2.3");
+        console.log("        SNIPER API v2.4");
 
         console.log("====================================");
 
@@ -288,29 +390,41 @@ app.listen(
 
         console.log(
 
-            `Health : http://localhost:${PORT}/health`
+            `Health    : http://localhost:${PORT}/health`
 
         );
 
         console.log(
 
-            `Scan   : http://localhost:${PORT}/scan`
+            `Scan      : http://localhost:${PORT}/scan`
 
         );
 
         console.log(
 
-            `Swing  : http://localhost:${PORT}/swing`
+            `Swing     : http://localhost:${PORT}/swing`
 
         );
 
         console.log(
 
-            `RVOL   : http://localhost:${PORT}/rvol`
+            `RVOL      : http://localhost:${PORT}/rvol`
+
+        );
+
+        console.log(
+
+            `Watchlist : http://localhost:${PORT}/watchlist`
 
         );
 
         console.log("");
+
+        console.log(
+
+            `Loaded ${watchlistStore.count()} symbols from data/watchlist.json`
+
+        );
 
         console.log("Ready for React UI");
 

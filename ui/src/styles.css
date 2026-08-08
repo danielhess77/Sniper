@@ -125,6 +125,8 @@ body {
 
     margin-bottom: 20px;
 
+    flex-wrap: wrap;
+
 }
 
 .tab {
@@ -458,6 +460,212 @@ tbody tr:hover {
 .detail strong {
 
     color: var(--text);
+
+}
+
+/* Watchlist editor */
+
+.watchlistPanel {
+
+    background: var(--panel);
+
+    border: 1px solid var(--border);
+
+    border-radius: var(--radius);
+
+    overflow: hidden;
+
+}
+
+.watchlistBody {
+
+    padding: 20px;
+
+}
+
+.watchlistAdd {
+
+    display: flex;
+
+    gap: 10px;
+
+    margin-bottom: 16px;
+
+}
+
+.watchlistAdd input {
+
+    flex: 1;
+
+    background: var(--bg);
+
+    border: 1px solid var(--border);
+
+    border-radius: 10px;
+
+    color: var(--text);
+
+    padding: 12px 14px;
+
+    font-size: 15px;
+
+    text-transform: uppercase;
+
+}
+
+.watchlistAdd input:focus {
+
+    outline: none;
+
+    border-color: var(--blue);
+
+}
+
+.btn {
+
+    border: 1px solid var(--border);
+
+    border-radius: 10px;
+
+    padding: 12px 16px;
+
+    font-weight: 600;
+
+    cursor: pointer;
+
+    background: var(--panel2);
+
+    color: var(--text);
+
+}
+
+.btn-primary {
+
+    background: rgba(79, 163, 255, 0.2);
+
+    border-color: var(--blue);
+
+    color: var(--blue);
+
+}
+
+.btn-success {
+
+    background: rgba(49, 208, 125, 0.18);
+
+    border-color: var(--green);
+
+    color: var(--green);
+
+}
+
+.btn:disabled {
+
+    opacity: 0.5;
+
+    cursor: not-allowed;
+
+}
+
+.chipGrid {
+
+    display: flex;
+
+    flex-wrap: wrap;
+
+    gap: 8px;
+
+    margin-bottom: 18px;
+
+    min-height: 48px;
+
+}
+
+.chip {
+
+    display: inline-flex;
+
+    align-items: center;
+
+    gap: 8px;
+
+    background: var(--panel2);
+
+    border: 1px solid var(--border);
+
+    border-radius: 999px;
+
+    padding: 8px 10px 8px 14px;
+
+    font-weight: 600;
+
+    font-size: 13px;
+
+}
+
+.chip button {
+
+    border: none;
+
+    background: transparent;
+
+    color: var(--muted);
+
+    cursor: pointer;
+
+    font-size: 14px;
+
+    line-height: 1;
+
+    padding: 0 4px;
+
+}
+
+.chip button:hover {
+
+    color: var(--red);
+
+}
+
+.watchlistFooter {
+
+    display: flex;
+
+    justify-content: space-between;
+
+    align-items: center;
+
+    gap: 12px;
+
+    flex-wrap: wrap;
+
+}
+
+.watchlistHint {
+
+    color: var(--muted);
+
+    font-size: 13px;
+
+}
+
+.watchlistMsg {
+
+    margin-top: 12px;
+
+    font-size: 13px;
+
+}
+
+.watchlistMsg.ok {
+
+    color: var(--green);
+
+}
+
+.watchlistMsg.err {
+
+    color: var(--red);
 
 }
 

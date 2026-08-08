@@ -1,84 +1,15 @@
 /**
  * Sniper
- * Watchlist
+ * Watchlist (compatibility export)
  *
- * Version: 1.0
+ * Prefer watchlistStore.get() at request time so UI edits apply
+ * without restarting the process mid-request.
+ *
+ * DEFAULT list seeds data/watchlist.json on first load.
  */
 
-export const WATCHLIST: string[] = [
+import { watchlistStore } from "./WatchlistStore.js";
 
-    "SPY",
-
-    "QQQ",
-
-    "AMD",
-
-    "NVDA",
-
-    "MSFT",
-
-    "AVGO",
-
-    "GOOGL",
-
-    "TSLA",
-
-    "SMH",
-
-    "MRVL",
-
-    "SMCI",
-
-    "INTC",
-
-    "ON",
-
-    "ORCL",
-
-    "META",
-
-    "AMZN",
-
-    "DIS",
-
-    "NKE",
-
-    "MCD",
-
-    "COST",
-
-    "HOOD",
-
-    "PYPL",
-
-    "SOFI",
-
-    "MSTR",
-
-    "MARA",
-
-    "SLV",
-
-    "GLD",
-
-    "GDX",
-
-    "SLB",
-
-    "HAL",
-
-    "GILD",
-
-    "XBI",
-
-    "PFE",
-
-    "ABBV",
-
-    "RGTI",
-
-    
-
-
-
-];
+/** Snapshot at module load — mainly for scripts. Live path: watchlistStore.get() */
+export const WATCHLIST: string[] =
+    watchlistStore.load();

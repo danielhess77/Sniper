@@ -1,7 +1,7 @@
 /**
  * Sniper UI API
  *
- * Fetches live scan, swing, and RVOL results from the Sniper backend.
+ * Fetches live scan, swing, RVOL, and watchlist from the Sniper backend.
  */
 
 export interface ScanCard {
@@ -133,6 +133,20 @@ export interface RvolResponse {
 
 }
 
+export interface WatchlistResponse {
+
+    success: boolean;
+
+    timestamp: string;
+
+    count: number;
+
+    symbols: string[];
+
+    error?: string;
+
+}
+
 const API = "/api";
 
 export async function getScan(): Promise<ScanResponse> {
@@ -189,5 +203,62 @@ export async function getRvol(): Promise<RvolResponse> {
     }
 
     return response.json();
+
+}
+
+export async function getWatchlist(): Promise<WatchlistResponse> {
+
+    const response =
+        await fetch(`${API}/watchlist`);
+
+    if (!response.ok) {
+
+        throw new Error(
+
+            "Unable to reach Watchlist endpoint"
+
+        );
+
+    }
+
+    return response.json();
+
+}
+
+export async function putWatchlist(
+
+    symbols: string[]
+
+): Promise<WatchlistResponse> {
+
+    const response =
+        await fetch(`${API}/watchlist`, {
+
+            method: "PUT",
+
+            headers: {
+
+                "Content-Type": "application/json"
+
+            },
+
+            body: JSON.stringify({ symbols })
+
+        });
+
+    const data =
+        await response.json() as WatchlistResponse;
+
+    if (!response.ok) {
+
+        throw new Error(
+
+            data.error || "Failed to save watchlist"
+
+        );
+
+    }
+
+    return data;
 
 }
