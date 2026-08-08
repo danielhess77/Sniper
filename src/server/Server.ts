@@ -136,7 +136,11 @@ app.get(
                     new Date().toISOString(),
 
                 error:
-                    "Scanner failed"
+                    error instanceof Error
+
+                        ? error.message
+
+                        : "Scanner failed"
 
             });
 
@@ -201,7 +205,11 @@ app.get(
                     new Date().toISOString(),
 
                 error:
-                    "Swing scanner failed"
+                    error instanceof Error
+
+                        ? error.message
+
+                        : "Swing scanner failed"
 
             });
 
@@ -242,7 +250,11 @@ app.get(
                     new Date().toISOString(),
 
                 error:
-                    "RVOL request failed"
+                    error instanceof Error
+
+                        ? error.message
+
+                        : "RVOL request failed"
 
             });
 

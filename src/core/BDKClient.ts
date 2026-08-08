@@ -2,7 +2,7 @@
  * Sniper
  * Broker Development Kit Client
  *
- * Version: 0.6
+ * Version: 0.7
  *
  * Purpose:
  * Retrieve market data from the BDK.
@@ -83,6 +83,12 @@ export class BDKClient {
             now.getTime().toString()
         );
 
+        // Intraday requires periodType=day (Schwab default)
+        url.searchParams.set(
+            "periodType",
+            "day"
+        );
+
         url.searchParams.set(
             "frequencyType",
             frequencyType
@@ -104,6 +110,9 @@ export class BDKClient {
 
     //--------------------------------------------------
     // Daily history (for swing RS / trend / pullback)
+    //
+    // Schwab rule: frequencyType=daily is invalid with
+    // periodType=day. Use periodType=year (or month).
     //--------------------------------------------------
 
     async getDailyHistory(
@@ -137,6 +146,12 @@ export class BDKClient {
         url.searchParams.set(
             "endDate",
             now.getTime().toString()
+        );
+
+        // Required for daily bars
+        url.searchParams.set(
+            "periodType",
+            "year"
         );
 
         url.searchParams.set(
@@ -285,7 +300,7 @@ export class BDKClient {
             console.error(body);
 
             throw new Error(
-                `BDK request failed (${response.status})`
+                `BDK request failed (${response.status}): ${body.slice(0, 200)}`
             );
 
         }
