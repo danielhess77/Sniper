@@ -2,7 +2,7 @@
  * Sniper
  * Broker Development Kit Client
  *
- * Version: 0.5
+ * Version: 0.6
  *
  * Purpose:
  * Retrieve market data from the BDK.
@@ -40,15 +40,11 @@ export interface QuoteSnapshot {
 
 export class BDKClient {
 
-    //--------------------------------------------------
-    // BDK Cloudflare Worker
-    //--------------------------------------------------
-
     private readonly baseUrl =
         "https://bdk.daniel-hess7.workers.dev";
 
     //--------------------------------------------------
-    // Retrieve historical candles
+    // Intraday history (today)
     //--------------------------------------------------
 
     async getHistory(
@@ -69,21 +65,13 @@ export class BDKClient {
                 this.baseUrl
             );
 
-        //--------------------------------------------------
-        // Build today's date range
-        //--------------------------------------------------
-
         const now = new Date();
 
         const start = new Date(now);
 
-        // 4:00 AM Eastern
         start.setHours(4, 0, 0, 0);
 
-        url.searchParams.set(
-            "symbol",
-            symbol
-        );
+        url.searchParams.set("symbol", symbol);
 
         url.searchParams.set(
             "startDate",
@@ -107,46 +95,71 @@ export class BDKClient {
 
         url.searchParams.set(
             "needExtendedHoursData",
-            extendedHours
-                ? "true"
-                : "false"
+            extendedHours ? "true" : "false"
         );
 
-        console.log("");
-        console.log("=== BDK Request ===");
-        console.log(url.toString());
-        console.log("===================");
-        console.log("");
-
-        const response =
-            await fetch(url);
-
-        if (!response.ok) {
-
-            const body =
-                await response.text();
-
-            console.error(
-                "BDK Response:"
-            );
-
-            console.error(body);
-
-            throw new Error(
-                `BDK request failed (${response.status})`
-            );
-
-        }
-
-        const data =
-            await response.json();
-
-        return data.candles ?? [];
+        return this.fetchCandles(url);
 
     }
 
     //--------------------------------------------------
-    // Batch quotes (single Schwab request for many symbols)
+    // Daily history (for swing RS / trend / pullback)
+    //--------------------------------------------------
+
+    async getDailyHistory(
+
+        symbol: string,
+
+        /** Calendar days of history to request */
+        lookbackDays = 180
+
+    ): Promise<Candle[]> {
+
+        const url =
+            new URL(
+                "/history",
+                this.baseUrl
+            );
+
+        const now = new Date();
+
+        const start = new Date(now);
+
+        start.setDate(start.getDate() - lookbackDays);
+
+        url.searchParams.set("symbol", symbol);
+
+        url.searchParams.set(
+            "startDate",
+            start.getTime().toString()
+        );
+
+        url.searchParams.set(
+            "endDate",
+            now.getTime().toString()
+        );
+
+        url.searchParams.set(
+            "frequencyType",
+            "daily"
+        );
+
+        url.searchParams.set(
+            "frequency",
+            "1"
+        );
+
+        url.searchParams.set(
+            "needExtendedHoursData",
+            "false"
+        );
+
+        return this.fetchCandles(url);
+
+    }
+
+    //--------------------------------------------------
+    // Batch quotes
     //--------------------------------------------------
 
     async getQuotes(
@@ -245,6 +258,42 @@ export class BDKClient {
         }
 
         return snapshots;
+
+    }
+
+    private async fetchCandles(
+
+        url: URL
+
+    ): Promise<Candle[]> {
+
+        console.log("");
+        console.log("=== BDK Request ===");
+        console.log(url.toString());
+        console.log("===================");
+        console.log("");
+
+        const response =
+            await fetch(url);
+
+        if (!response.ok) {
+
+            const body =
+                await response.text();
+
+            console.error("BDK Response:");
+            console.error(body);
+
+            throw new Error(
+                `BDK request failed (${response.status})`
+            );
+
+        }
+
+        const data =
+            await response.json();
+
+        return data.candles ?? [];
 
     }
 

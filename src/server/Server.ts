@@ -1,7 +1,7 @@
 /**
- * Sniper Server v2.2
+ * Sniper Server v2.3
  *
- * Express API for the Sniper scanner + RVOL panel.
+ * Express API: 0DTE scan + RVOL + Swing scanner.
  */
 
 import express from "express";
@@ -9,6 +9,7 @@ import cors from "cors";
 
 import { BDKClient } from "../core/BDKClient.js";
 import { Scanner } from "../core/Scanner.js";
+import { SwingScanner } from "../core/SwingScanner.js";
 import { RvolEngine } from "../engines/RvolEngine.js";
 
 import { WATCHLIST } from "../config/Watchlist.js";
@@ -42,6 +43,8 @@ const scanner = new Scanner(
 
 );
 
+const swingScanner = new SwingScanner(bdk);
+
 const rvolEngine = new RvolEngine(bdk);
 
 //--------------------------------------------------
@@ -69,7 +72,7 @@ app.get(
 );
 
 //--------------------------------------------------
-// Live Scan
+// Live 0DTE Scan
 //--------------------------------------------------
 
 app.get(
@@ -144,8 +147,72 @@ app.get(
 );
 
 //--------------------------------------------------
+// Swing Scan (Short + Intermediate)
+//--------------------------------------------------
+
+app.get(
+
+    "/swing",
+
+    async (_, res) => {
+
+        try {
+
+            const results =
+                await swingScanner.scan(WATCHLIST);
+
+            const qualified =
+                results.filter(r => r.qualified).length;
+
+            const watching =
+                results.filter(r => r.state === "watching").length;
+
+            res.json({
+
+                success: true,
+
+                timestamp:
+                    new Date().toISOString(),
+
+                watchlist:
+                    WATCHLIST.length,
+
+                total: results.length,
+
+                qualified,
+
+                watching,
+
+                results
+
+            });
+
+        }
+
+        catch (error) {
+
+            console.error(error);
+
+            res.status(500).json({
+
+                success: false,
+
+                timestamp:
+                    new Date().toISOString(),
+
+                error:
+                    "Swing scanner failed"
+
+            });
+
+        }
+
+    }
+
+);
+
+//--------------------------------------------------
 // Relative Volume Leaderboard
-// 1 batch quotes call, cached 90s
 //--------------------------------------------------
 
 app.get(
@@ -201,7 +268,7 @@ app.listen(
 
         console.log("====================================");
 
-        console.log("        SNIPER API v2.2");
+        console.log("        SNIPER API v2.3");
 
         console.log("====================================");
 
@@ -216,6 +283,12 @@ app.listen(
         console.log(
 
             `Scan   : http://localhost:${PORT}/scan`
+
+        );
+
+        console.log(
+
+            `Swing  : http://localhost:${PORT}/swing`
 
         );
 
