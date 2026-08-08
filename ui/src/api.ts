@@ -2,6 +2,40 @@
  * Sniper UI API
  */
 
+export interface OptionSuggestion {
+
+    ok: boolean;
+
+    side: "CALL" | "PUT";
+
+    symbol: string;
+
+    description: string;
+
+    strike: number;
+
+    expiration: string;
+
+    dte: number;
+
+    bid: number;
+
+    ask: number;
+
+    mid: number;
+
+    spreadPct: number;
+
+    delta: number;
+
+    openInterest: number;
+
+    volume: number;
+
+    reason: string;
+
+}
+
 export interface ScanCard {
 
     symbol: string;
@@ -14,10 +48,7 @@ export interface ScanCard {
 
     score: number;
 
-    direction:
-        | "BULLISH"
-        | "BEARISH"
-        | "NONE";
+    direction: "BULLISH" | "BEARISH" | "NONE";
 
     entry: number;
 
@@ -26,6 +57,8 @@ export interface ScanCard {
     target: number;
 
     riskReward: number;
+
+    option?: OptionSuggestion | null;
 
 }
 
@@ -189,11 +222,7 @@ export async function getWatchlist(): Promise<WatchlistResponse> {
 
 }
 
-export async function putWatchlist(
-
-    symbols: string[]
-
-): Promise<WatchlistResponse> {
+export async function putWatchlist(symbols: string[]): Promise<WatchlistResponse> {
 
     const response = await fetch(`${API}/watchlist`, {
 
@@ -207,11 +236,7 @@ export async function putWatchlist(
 
     const data = await response.json() as WatchlistResponse;
 
-    if (!response.ok) {
-
-        throw new Error(data.error || "Failed to save watchlist");
-
-    }
+    if (!response.ok) throw new Error(data.error || "Failed to save watchlist");
 
     return data;
 
