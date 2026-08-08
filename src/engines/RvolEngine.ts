@@ -2,14 +2,14 @@
  * Sniper
  * Relative Volume Engine
  *
- * Version: 1.0
+ * Version: 1.1
  *
  * RVOL = totalVolume / avg10DaysVolume
  *
  * Rate-limit friendly:
  * - One batch quotes call for the entire watchlist
- * - 90-second in-memory cache
- * - Captures a frozen ranking once session is >= 30 min after open
+ * - 15-minute in-memory cache (matches UI poll)
+ * - Still captures a frozen ranking once session is >= 30 min after open
  */
 
 import { BDKClient, QuoteSnapshot } from "../core/BDKClient.js";
@@ -50,13 +50,15 @@ export interface RvolResult {
 
 export class RvolEngine {
 
-    private static readonly CACHE_MS = 90_000;
+    // 15 minutes — one Schwab quotes call per interval
+    private static readonly CACHE_MS = 15 * 60_000;
 
     private static readonly TOP_N = 10;
 
     private cache:
         | {
             expiresAt: number;
+            fetchedAt: string;
             live: RvolCard[];
             sessionMinute: number;
         }
@@ -102,7 +104,7 @@ export class RvolEngine {
 
                 success: true,
 
-                timestamp: now.toISOString(),
+                timestamp: this.cache.fetchedAt,
 
                 sessionMinute,
 
@@ -129,10 +131,15 @@ export class RvolEngine {
         const live =
             this.rank(quotes);
 
+        const fetchedAt =
+            now.toISOString();
+
         this.cache = {
 
             expiresAt:
                 Date.now() + RvolEngine.CACHE_MS,
+
+            fetchedAt,
 
             live,
 
@@ -165,7 +172,7 @@ export class RvolEngine {
 
             success: true,
 
-            timestamp: now.toISOString(),
+            timestamp: fetchedAt,
 
             sessionMinute,
 

@@ -50,24 +50,15 @@ function App() {
     const [rvolLive, setRvolLive] =
         useState<RvolCard[]>([]);
 
-    const [rvolOpening30, setRvolOpening30] =
-        useState<RvolCard[] | null>(null);
+    const [lastRvol, setLastRvol] =
+        useState("");
 
-    const [afterOpen30, setAfterOpen30] =
-        useState(false);
-
-    async function refresh() {
+    async function refreshScan() {
 
         try {
 
-            const [scanResponse, rvolResponse] =
-                await Promise.all([
-
-                    getScan(),
-
-                    getRvol().catch(() => null)
-
-                ]);
+            const scanResponse =
+                await getScan();
 
             setResults(scanResponse.results);
 
@@ -122,16 +113,6 @@ function App() {
 
             }
 
-            if (rvolResponse?.success) {
-
-                setRvolLive(rvolResponse.live);
-
-                setRvolOpening30(rvolResponse.opening30);
-
-                setAfterOpen30(rvolResponse.afterOpen30);
-
-            }
-
             setError("");
 
         }
@@ -154,23 +135,87 @@ function App() {
 
     }
 
+    async function refreshRvol() {
+
+        try {
+
+            const rvolResponse =
+                await getRvol();
+
+            if (rvolResponse.success) {
+
+                setRvolLive(rvolResponse.live);
+
+                setLastRvol(
+
+                    new Date(
+
+                        rvolResponse.timestamp
+
+                    ).toLocaleTimeString(
+
+                        [],
+
+                        {
+
+                            hour: "2-digit",
+
+                            minute: "2-digit",
+
+                            second: "2-digit"
+
+                        }
+
+                    )
+
+                );
+
+            }
+
+        }
+
+        catch {
+
+            // RVOL is non-critical — don't block the scan UI
+
+        }
+
+    }
+
     useEffect(() => {
 
-        refresh();
+        refreshScan();
 
-        const timer =
+        refreshRvol();
+
+        const scanTimer =
 
             setInterval(
 
-                refresh,
+                refreshScan,
 
-                60000
+                60_000
 
             );
 
-        return () =>
+        // RVOL every 15 minutes — tracks which names are strengthening
+        const rvolTimer =
 
-            clearInterval(timer);
+            setInterval(
+
+                refreshRvol,
+
+                15 * 60_000
+
+            );
+
+        return () => {
+
+            clearInterval(scanTimer);
+
+            clearInterval(rvolTimer);
+
+        };
 
     }, []);
 
@@ -183,20 +228,6 @@ function App() {
         return results[0].score;
 
     }, [results]);
-
-    const rvolRows =
-        afterOpen30 && rvolOpening30 && rvolOpening30.length
-
-            ? rvolOpening30
-
-            : rvolLive;
-
-    const rvolTitle =
-        afterOpen30 && rvolOpening30
-
-            ? "Highest RVOL (10:00 ET Snapshot)"
-
-            : "Highest RVOL (Live)";
 
     return (
 
@@ -372,13 +403,23 @@ function App() {
 
             <section className="rvolPanel">
 
-                <div className="panelHeader">
+                <div className="panelHeader rvolHeader">
 
-                    {rvolTitle}
+                    <span>Highest RVOL (Live)</span>
+
+                    <span className="rvolMeta">
+
+                        {lastRvol
+
+                            ? `Updated ${lastRvol} · every 15 min`
+
+                            : "every 15 min"}
+
+                    </span>
 
                 </div>
 
-                {rvolRows.length === 0 ? (
+                {rvolLive.length === 0 ? (
 
                     <div className="rvolEmpty">
 
@@ -414,7 +455,7 @@ function App() {
 
                         <tbody>
 
-                            {rvolRows.map((row, index) => (
+                            {rvolLive.map((row, index) => (
 
                                 <tr key={row.symbol}>
 

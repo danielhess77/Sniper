@@ -175,6 +175,28 @@ body {
 
 }
 
+.rvolHeader {
+
+    display: flex;
+
+    justify-content: space-between;
+
+    align-items: center;
+
+    gap: 12px;
+
+}
+
+.rvolMeta {
+
+    font-weight: 500;
+
+    font-size: 12px;
+
+    color: var(--muted);
+
+}
+
 .rvolEmpty {
 
     padding: 20px;
