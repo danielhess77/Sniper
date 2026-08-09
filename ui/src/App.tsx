@@ -25,6 +25,12 @@ function horizonLabel(id: string): string {
     return id;
 }
 
+function setupLabel(t?: string): string {
+    if (t === "TIGHT_BASE") return "Tight Base";
+    if (t === "PULLBACK") return "Pullback";
+    return t || "—";
+}
+
 function OptionBlock({ option }: { option: OptionSuggestion }) {
     return (
         <>
@@ -108,7 +114,9 @@ function App() {
             setSelectedSwing(prev => {
                 if (!swingResponse.results.length) return null;
                 if (!prev) return swingResponse.results[0];
-                return swingResponse.results.find(r => r.symbol === prev.symbol && r.horizonId === prev.horizonId) ?? swingResponse.results[0];
+                return swingResponse.results.find(
+                    r => r.symbol === prev.symbol && r.horizonId === prev.horizonId && (r.setupType || "PULLBACK") === (prev.setupType || "PULLBACK")
+                ) ?? swingResponse.results[0];
             });
         } catch {
             if (tab === "swing") setError("Unable to reach Swing endpoint");
@@ -209,7 +217,7 @@ function App() {
 
     const subtitle =
         tab === "intraday" ? "Institutional Intraday Scanner"
-            : tab === "swing" ? "RS + Pullback Swing Scanner"
+            : tab === "swing" ? "RS + Pullback / Tight Base Swings"
                 : tab === "rvol" ? "Opening + Day Relative Volume"
                     : "Watchlist Editor";
 
@@ -360,17 +368,23 @@ function App() {
                             <table>
                                 <thead>
                                     <tr>
-                                        <th>Symbol</th><th>Horizon</th><th>State</th><th>Score</th><th>RS Rank</th><th>Entry</th><th>R:R</th>
+                                        <th>Symbol</th><th>Horizon</th><th>Setup</th><th>State</th><th>Score</th><th>RS Rank</th><th>Entry</th><th>R:R</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {filteredSwing.map(row => (
-                                        <tr key={`${row.symbol}-${row.horizonId}`} onClick={() => setSelectedSwing(row)}>
+                                        <tr
+                                            key={`${row.symbol}-${row.horizonId}-${row.setupType || "PULLBACK"}`}
+                                            onClick={() => setSelectedSwing(row)}
+                                        >
                                             <td>{row.symbol}</td>
                                             <td>
                                                 <span className={row.horizonId === "SHORT" ? "badge badge-short" : "badge badge-intermediate"}>
                                                     {horizonLabel(row.horizonId)}
                                                 </span>
+                                            </td>
+                                            <td>
+                                                <span className="badge badge-state">{setupLabel(row.setupType)}</span>
                                             </td>
                                             <td>
                                                 <span className={row.qualified ? "badge badge-qualified" : "badge badge-state"}>{row.state}</span>
@@ -390,6 +404,7 @@ function App() {
                                 <>
                                     <div className="detail"><label>Symbol</label><strong>{selectedSwing.symbol}</strong></div>
                                     <div className="detail"><label>Horizon</label><strong>{horizonLabel(selectedSwing.horizonId)}</strong></div>
+                                    <div className="detail"><label>Setup</label><strong>{setupLabel(selectedSwing.setupType)}</strong></div>
                                     <div className="detail"><label>State</label><strong>{selectedSwing.state}</strong></div>
                                     <div className="detail"><label>Score</label><strong>{selectedSwing.score}</strong></div>
                                     <div className="detail"><label>RS Rank</label><strong>#{selectedSwing.rsRank} ({(selectedSwing.rs * 100).toFixed(1)}% vs SPY)</strong></div>
