@@ -81,9 +81,6 @@ function OptionBlock({ option }: { option: OptionSuggestion }) {
                     <div className="detail"><label>Contract</label><strong>{option.description || option.symbol}</strong></div>
                     <div className="detail"><label>Expiry / DTE</label><strong>{option.expiration} · {option.dte}d</strong></div>
                     <div className="detail"><label>Bid / Ask</label><strong>{option.bid.toFixed(2)} / {option.ask.toFixed(2)}</strong></div>
-                    <div className="detail"><label>Mid / Spread</label><strong>{option.mid.toFixed(2)} · {option.spreadPct}%</strong></div>
-                    <div className="detail"><label>Delta</label><strong>{option.delta}</strong></div>
-                    <div className="detail"><label>OI / Vol</label><strong>{option.openInterest} / {option.volume}</strong></div>
                 </>
             ) : (
                 <div className="detail"><label>Note</label><strong>{option.reason}</strong></div>
@@ -352,7 +349,7 @@ function App() {
                     <div>
                         <span>
                             {tab === "rvol" ? "Last RVOL"
-                                : tab === "swing" ? "Last Swing"
+                                : tab === "swing" ? "Last Scan"
                                     : tab === "watchlist" ? "Symbols"
                                         : tab === "journal" ? "Entries"
                                             : "Last Scan"}
@@ -527,7 +524,7 @@ function App() {
                     <section className="rvolPanel" style={{ marginBottom: 24 }}>
                         <div className="panelHeader rvolHeader">
                             <span>Opening RVOL (9:30–10:00 vs avg OR)</span>
-                            <span className="rvolMeta">Built once after 10:00 ET · true early leaders</span>
+                            <span className="rvolMeta">Built once after 10:00 ET (first heavy pass of the day)</span>
                         </div>
                         {!rvolOpening || rvolOpening.length === 0
                             ? <div className="rvolEmpty">Available after 10:00 ET (first heavy pass of the day).</div>
