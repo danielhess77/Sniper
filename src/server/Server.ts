@@ -1,8 +1,7 @@
 /**
- * Sniper Server v2.6
+ * Sniper Server v2.7
  *
- * Express API: 0DTE scan + RVOL + Swing + Watchlist editor.
- * Intraday playbooks: 6 (Failed OR + Opening Drive Hold).
+ * Express API: scan + swing + RVOL + watchlist + trade journal.
  */
 
 import express from "express";
@@ -14,6 +13,9 @@ import { SwingScanner } from "../core/SwingScanner.js";
 import { RvolEngine } from "../engines/RvolEngine.js";
 
 import { watchlistStore } from "../config/WatchlistStore.js";
+import { journalStore } from "../journal/JournalStore.js";
+import { JournalResolver } from "../journal/JournalResolver.js";
+import type { TakenStatus } from "../journal/JournalTypes.js";
 
 import { TrendContinuation } from "../playbooks/TrendContinuation.js";
 import { OpeningRangeBreakout } from "../playbooks/OpeningRangeBreakout.js";
@@ -26,11 +28,15 @@ const app = express();
 
 app.use(cors());
 
-app.use(express.json({ limit: "32kb" }));
+app.use(express.json({ limit: "64kb" }));
 
 watchlistStore.load();
 
+journalStore.load();
+
 const bdk = new BDKClient();
+
+const journalResolver = new JournalResolver(bdk);
 
 const PLAYBOOKS = [
 
@@ -70,7 +76,9 @@ app.get(
 
             watchlist: watchlistStore.count(),
 
-            playbooks: PLAYBOOKS.length
+            playbooks: PLAYBOOKS.length,
+
+            journal: journalStore.list().length
 
         });
 
@@ -84,8 +92,7 @@ app.get(
 
     (_, res) => {
 
-        const symbols =
-            watchlistStore.get();
+        const symbols = watchlistStore.get();
 
         res.json({
 
@@ -111,17 +118,9 @@ app.put(
 
         try {
 
-            const body =
-                req.body as { symbols?: unknown };
+            const body = req.body as { symbols?: unknown };
 
-            const symbols =
-                watchlistStore.save(body?.symbols);
-
-            console.log(
-
-                `Watchlist updated: ${symbols.length} symbols`
-
-            );
+            const symbols = watchlistStore.save(body?.symbols);
 
             res.json({
 
@@ -137,20 +136,159 @@ app.put(
 
         } catch (error) {
 
-            console.error(error);
-
             res.status(400).json({
 
                 success: false,
 
                 timestamp: new Date().toISOString(),
 
-                error:
-                    error instanceof Error
+                error: error instanceof Error ? error.message : "Invalid watchlist"
 
-                        ? error.message
+            });
 
-                        : "Invalid watchlist"
+        }
+
+    }
+
+);
+
+//--------------------------------------------------
+// Journal
+//--------------------------------------------------
+
+app.get(
+
+    "/journal",
+
+    (_, res) => {
+
+        res.json({
+
+            success: true,
+
+            timestamp: new Date().toISOString(),
+
+            entries: journalStore.list(),
+
+            summary: journalStore.summary()
+
+        });
+
+    }
+
+);
+
+app.patch(
+
+    "/journal/:id",
+
+    (req, res) => {
+
+        try {
+
+            const id = req.params.id;
+
+            const body = req.body as {
+
+                taken?: TakenStatus;
+
+                notes?: string;
+
+            };
+
+            let row = null as ReturnType<typeof journalStore.setTaken>;
+
+            if (
+
+                body.taken === "yes" ||
+                body.taken === "no" ||
+                body.taken === "unknown"
+
+            ) {
+
+                row = journalStore.setTaken(id, body.taken);
+
+            }
+
+            if (typeof body.notes === "string") {
+
+                row = journalStore.setNotes(id, body.notes);
+
+            }
+
+            if (!row) {
+
+                res.status(404).json({
+
+                    success: false,
+
+                    error: "Journal entry not found"
+
+                });
+
+                return;
+
+            }
+
+            res.json({
+
+                success: true,
+
+                timestamp: new Date().toISOString(),
+
+                entry: row,
+
+                summary: journalStore.summary()
+
+            });
+
+        } catch (error) {
+
+            res.status(400).json({
+
+                success: false,
+
+                error: error instanceof Error ? error.message : "Update failed"
+
+            });
+
+        }
+
+    }
+
+);
+
+app.post(
+
+    "/journal/resolve",
+
+    async (_, res) => {
+
+        try {
+
+            const result = await journalResolver.resolveOpen();
+
+            res.json({
+
+                success: true,
+
+                timestamp: new Date().toISOString(),
+
+                ...result,
+
+                summary: journalStore.summary(),
+
+                entries: journalStore.list()
+
+            });
+
+        } catch (error) {
+
+            res.status(500).json({
+
+                success: false,
+
+                error: error instanceof Error ? error.message : "Resolve failed"
 
             });
 
@@ -168,51 +306,80 @@ app.get(
 
         try {
 
-            const list =
-                watchlistStore.get();
+            const list = watchlistStore.get();
 
-            const results =
-                await scanner.scan(list);
+            const results = await scanner.scan(list);
 
-            results.sort(
+            results.sort((a, b) => b.score - a.score);
 
-                (a, b) =>
+            let logged = 0;
 
-                    b.score - a.score
+            for (const r of results) {
 
-            );
+                if (!r.qualified) continue;
 
-            const qualified =
-                results.filter(
+                const created = journalStore.logQualified({
 
-                    result => result.qualified
+                    scope: "intraday",
 
-                ).length;
+                    symbol: r.symbol,
+
+                    playbook: r.playbook,
+
+                    setupType: r.playbook,
+
+                    direction: r.direction,
+
+                    entry: r.entry,
+
+                    stop: r.stop,
+
+                    target: r.target,
+
+                    riskReward: r.riskReward,
+
+                    score: r.score
+
+                });
+
+                if (created) logged++;
+
+            }
+
+            // Opportunistic resolve (cheap if few open)
+            try {
+
+                await journalResolver.resolveOpen();
+
+            } catch {
+
+                // non-fatal
+
+            }
+
+            const qualified = results.filter(r => r.qualified).length;
 
             res.json({
 
                 success: true,
 
-                timestamp:
-                    new Date().toISOString(),
+                timestamp: new Date().toISOString(),
 
-                watchlist:
-                    list.length,
+                watchlist: list.length,
 
                 playbooks: PLAYBOOKS.length,
 
-                total:
-                    results.length,
+                total: results.length,
 
                 qualified,
+
+                journalLogged: logged,
 
                 results
 
             });
 
-        }
-
-        catch (error) {
+        } catch (error) {
 
             console.error(error);
 
@@ -220,15 +387,9 @@ app.get(
 
                 success: false,
 
-                timestamp:
-                    new Date().toISOString(),
+                timestamp: new Date().toISOString(),
 
-                error:
-                    error instanceof Error
-
-                        ? error.message
-
-                        : "Scanner failed"
+                error: error instanceof Error ? error.message : "Scanner failed"
 
             });
 
@@ -246,41 +407,79 @@ app.get(
 
         try {
 
-            const list =
-                watchlistStore.get();
+            const list = watchlistStore.get();
 
-            const results =
-                await swingScanner.scan(list);
+            const results = await swingScanner.scan(list);
 
-            const qualified =
-                results.filter(r => r.qualified).length;
+            let logged = 0;
 
-            const watching =
-                results.filter(r => r.state === "watching").length;
+            for (const r of results) {
+
+                if (!r.qualified) continue;
+
+                const created = journalStore.logQualified({
+
+                    scope: "swing",
+
+                    symbol: r.symbol,
+
+                    playbook: `${r.horizon} · ${r.setupType || "PULLBACK"}`,
+
+                    setupType: r.setupType || "PULLBACK",
+
+                    horizonId: r.horizonId,
+
+                    direction: r.direction === "BULLISH" ? "BULLISH" : "NONE",
+
+                    entry: r.entry,
+
+                    stop: r.stop,
+
+                    target: r.target,
+
+                    riskReward: r.riskReward,
+
+                    score: r.score,
+
+                    rsRank: r.rsRank
+
+                });
+
+                if (created) logged++;
+
+            }
+
+            try {
+
+                await journalResolver.resolveOpen();
+
+            } catch {
+
+                // non-fatal
+
+            }
 
             res.json({
 
                 success: true,
 
-                timestamp:
-                    new Date().toISOString(),
+                timestamp: new Date().toISOString(),
 
-                watchlist:
-                    list.length,
+                watchlist: list.length,
 
                 total: results.length,
 
-                qualified,
+                qualified: results.filter(r => r.qualified).length,
 
-                watching,
+                watching: results.filter(r => r.state === "watching").length,
+
+                journalLogged: logged,
 
                 results
 
             });
 
-        }
-
-        catch (error) {
+        } catch (error) {
 
             console.error(error);
 
@@ -288,15 +487,9 @@ app.get(
 
                 success: false,
 
-                timestamp:
-                    new Date().toISOString(),
+                timestamp: new Date().toISOString(),
 
-                error:
-                    error instanceof Error
-
-                        ? error.message
-
-                        : "Swing scanner failed"
+                error: error instanceof Error ? error.message : "Swing scanner failed"
 
             });
 
@@ -314,33 +507,21 @@ app.get(
 
         try {
 
-            const list =
-                watchlistStore.get();
+            const list = watchlistStore.get();
 
-            const result =
-                await rvolEngine.evaluate(list);
+            const result = await rvolEngine.evaluate(list);
 
             res.json(result);
 
-        }
-
-        catch (error) {
-
-            console.error(error);
+        } catch (error) {
 
             res.status(500).json({
 
                 success: false,
 
-                timestamp:
-                    new Date().toISOString(),
+                timestamp: new Date().toISOString(),
 
-                error:
-                    error instanceof Error
-
-                        ? error.message
-
-                        : "RVOL request failed"
+                error: error instanceof Error ? error.message : "RVOL request failed"
 
             });
 
@@ -352,42 +533,34 @@ app.get(
 
 const PORT = 3000;
 
-app.listen(
+app.listen(PORT, () => {
 
-    PORT,
+    console.log("");
 
-    () => {
+    console.log("====================================");
 
-        console.log("");
+    console.log("        SNIPER API v2.7");
 
-        console.log("====================================");
+    console.log("====================================");
 
-        console.log("        SNIPER API v2.6");
+    console.log(`Health    : http://localhost:${PORT}/health`);
 
-        console.log("====================================");
+    console.log(`Scan      : http://localhost:${PORT}/scan`);
 
-        console.log("");
+    console.log(`Swing     : http://localhost:${PORT}/swing`);
 
-        console.log(`Health    : http://localhost:${PORT}/health`);
+    console.log(`RVOL      : http://localhost:${PORT}/rvol`);
 
-        console.log(`Scan      : http://localhost:${PORT}/scan`);
+    console.log(`Watchlist : http://localhost:${PORT}/watchlist`);
 
-        console.log(`Swing     : http://localhost:${PORT}/swing`);
+    console.log(`Journal   : http://localhost:${PORT}/journal`);
 
-        console.log(`RVOL      : http://localhost:${PORT}/rvol`);
+    console.log(`Playbooks : ${PLAYBOOKS.length}`);
 
-        console.log(`Watchlist : http://localhost:${PORT}/watchlist`);
+    console.log(`Journal   : ${journalStore.list().length} entries`);
 
-        console.log("");
+    console.log("Ready for React UI");
 
-        console.log(`Playbooks : ${PLAYBOOKS.length}`);
+    console.log("");
 
-        console.log(`Loaded ${watchlistStore.count()} symbols`);
-
-        console.log("Ready for React UI");
-
-        console.log("");
-
-    }
-
-);
+});
