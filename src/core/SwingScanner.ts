@@ -2,9 +2,13 @@
  * Sniper
  * Swing Scanner
  *
- * Version: 1.1
+ * Version: 1.2
  *
- * Qualified setups get a horizon-aware long CALL suggestion.
+ * Two setup paths per horizon:
+ *  - RS + Pullback (existing)
+ *  - RS + Tight Base Breakout (new)
+ *
+ * Qualified setups get horizon-aware long CALL suggestions.
  */
 
 import { BDKClient, Candle } from "./BDKClient.js";
@@ -12,6 +16,7 @@ import { SWING_HORIZONS } from "../config/SwingHorizons.js";
 import { RelativeStrengthEngine } from "../engines/RelativeStrengthEngine.js";
 import { OptionSelectEngine } from "../engines/OptionSelectEngine.js";
 import { SwingPlaybook, SwingResult } from "../playbooks/SwingPlaybook.js";
+import { SwingTightBasePlaybook, SwingTightBaseResult } from "../playbooks/SwingTightBasePlaybook.js";
 import type { OptionSuggestion } from "../types.js";
 
 export interface SwingCard {
@@ -44,6 +49,8 @@ export interface SwingCard {
 
     reason: string;
 
+    setupType: "PULLBACK" | "TIGHT_BASE";
+
     option?: OptionSuggestion | null;
 
 }
@@ -53,8 +60,11 @@ export class SwingScanner {
     private rsEngine =
         new RelativeStrengthEngine();
 
-    private playbook =
+    private pullbackPlaybook =
         new SwingPlaybook();
+
+    private tightBasePlaybook =
+        new SwingTightBasePlaybook();
 
     private optionSelect: OptionSelectEngine;
 
@@ -158,8 +168,9 @@ export class SwingScanner {
                 const rs =
                     rsBySymbol.get(history.symbol) ?? null;
 
-                const result =
-                    this.playbook.evaluate(
+                // Path 1: Pullback
+                const pullback =
+                    this.pullbackPlaybook.evaluate(
 
                         history.candles,
 
@@ -171,26 +182,48 @@ export class SwingScanner {
 
                 if (
 
-                    result.state === "invalid" &&
-                    result.score < 30
+                    !(pullback.state === "invalid" && pullback.score < 30)
 
                 ) {
 
-                    continue;
+                    cards.push(
+
+                        this.fromPullback(history.symbol, pullback)
+
+                    );
 
                 }
 
-                cards.push(
+                // Path 2: Tight Base Breakout
+                const tight =
+                    this.tightBasePlaybook.evaluate(
 
-                    this.toCard(history.symbol, result)
+                        history.candles,
 
-                );
+                        horizon,
+
+                        rs
+
+                    );
+
+                if (
+
+                    !(tight.state === "invalid" && tight.score < 30)
+
+                ) {
+
+                    cards.push(
+
+                        this.fromTightBase(history.symbol, tight)
+
+                    );
+
+                }
 
             }
 
         }
 
-        // Option enrichment: qualified only (shared 45-min chain cache)
         for (const card of cards) {
 
             if (!card.qualified) continue;
@@ -238,7 +271,7 @@ export class SwingScanner {
 
     }
 
-    private toCard(
+    private fromPullback(
 
         symbol: string,
 
@@ -274,7 +307,53 @@ export class SwingScanner {
 
             rs: result.rs,
 
-            reason: result.pullback.reason
+            reason: result.pullback.reason,
+
+            setupType: "PULLBACK"
+
+        };
+
+    }
+
+    private fromTightBase(
+
+        symbol: string,
+
+        result: SwingTightBaseResult
+
+    ): SwingCard {
+
+        return {
+
+            symbol,
+
+            horizon: result.horizon,
+
+            horizonId: result.horizonId,
+
+            state: result.state,
+
+            qualified: result.qualified,
+
+            score: result.score,
+
+            direction: result.trend.direction,
+
+            entry: result.risk.entry,
+
+            stop: result.risk.stop,
+
+            target: result.risk.target,
+
+            riskReward: result.risk.riskReward,
+
+            rsRank: result.rsRank,
+
+            rs: result.rs,
+
+            reason: result.base.reason,
+
+            setupType: "TIGHT_BASE"
 
         };
 

@@ -110,6 +110,8 @@ export interface SwingCard {
 
     reason: string;
 
+    setupType?: "PULLBACK" | "TIGHT_BASE" | string;
+
     option?: OptionSuggestion | null;
 
 }
