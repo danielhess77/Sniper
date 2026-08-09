@@ -1,5 +1,5 @@
 /**
- * Sniper Server v2.7
+ * Sniper Server v2.8
  *
  * Express API: scan + swing + RVOL + watchlist + trade journal.
  */
@@ -59,6 +59,28 @@ const scanner = new Scanner(bdk, PLAYBOOKS);
 const swingScanner = new SwingScanner(bdk);
 
 const rvolEngine = new RvolEngine(bdk);
+
+function etDayFromIso(iso: string | null | undefined): string | undefined {
+
+    if (!iso) return undefined;
+
+    const ms = Date.parse(iso);
+
+    if (!Number.isFinite(ms)) return undefined;
+
+    return new Intl.DateTimeFormat("en-CA", {
+
+        timeZone: "America/New_York",
+
+        year: "numeric",
+
+        month: "2-digit",
+
+        day: "2-digit"
+
+    }).format(new Date(ms));
+
+}
 
 app.get(
 
@@ -298,6 +320,33 @@ app.post(
 
 );
 
+/** Bulk fix: put every stop-marked row back to open */
+app.post(
+
+    "/journal/reopen-stops",
+
+    (_, res) => {
+
+        const reopened = journalStore.reopenAllStops();
+
+        res.json({
+
+            success: true,
+
+            timestamp: new Date().toISOString(),
+
+            reopened,
+
+            summary: journalStore.summary(),
+
+            entries: journalStore.list()
+
+        });
+
+    }
+
+);
+
 app.get(
 
     "/scan",
@@ -338,7 +387,9 @@ app.get(
 
                     riskReward: r.riskReward,
 
-                    score: r.score
+                    score: r.score,
+
+                    sessionDate: etDayFromIso(r.qualifiedAt)
 
                 });
 
@@ -346,7 +397,6 @@ app.get(
 
             }
 
-            // Opportunistic resolve (cheap if few open)
             try {
 
                 await journalResolver.resolveOpen();
@@ -441,7 +491,9 @@ app.get(
 
                     score: r.score,
 
-                    rsRank: r.rsRank
+                    rsRank: r.rsRank,
+
+                    sessionDate: etDayFromIso(r.qualifiedAt)
 
                 });
 
@@ -539,7 +591,7 @@ app.listen(PORT, () => {
 
     console.log("====================================");
 
-    console.log("        SNIPER API v2.7");
+    console.log("        SNIPER API v2.8");
 
     console.log("====================================");
 
