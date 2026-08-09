@@ -53,6 +53,21 @@ function fmtR(n: number | null): string {
     return `${s}${n.toFixed(2)}R`;
 }
 
+/** ET clock/date for qualified / logged timestamps */
+function formatEtStamp(iso: string | null | undefined, withTime = true): string {
+    if (!iso) return "—";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "—";
+    return d.toLocaleString("en-US", {
+        timeZone: "America/New_York",
+        month: "short",
+        day: "numeric",
+        ...(withTime
+            ? { hour: "numeric", minute: "2-digit" }
+            : { year: "numeric" })
+    });
+}
+
 function OptionBlock({ option }: { option: OptionSuggestion }) {
     return (
         <>
@@ -383,7 +398,7 @@ function App() {
                             <table>
                                 <thead>
                                     <tr>
-                                        <th>Symbol</th><th>Playbook</th><th>Triggered</th><th>Score</th><th>Direction</th><th>Entry</th><th>R:R</th>
+                                        <th>Symbol</th><th>Playbook</th><th>Qualified</th><th>Score</th><th>Direction</th><th>Entry</th><th>R:R</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -391,7 +406,7 @@ function App() {
                                         <tr key={`${scan.symbol}-${scan.playbook}`} onClick={() => setSelectedScan(scan)}>
                                             <td>{scan.symbol}</td>
                                             <td>{scan.playbook}</td>
-                                            <td>{scan.triggerTime}</td>
+                                            <td>{scan.triggerTime || formatEtStamp(scan.qualifiedAt)}</td>
                                             <td>{scan.score}</td>
                                             <td>{scan.direction}</td>
                                             <td>{scan.entry.toFixed(2)}</td>
@@ -407,6 +422,7 @@ function App() {
                                 <>
                                     <div className="detail"><label>Symbol</label><strong>{selectedScan.symbol}</strong></div>
                                     <div className="detail"><label>Playbook</label><strong>{selectedScan.playbook}</strong></div>
+                                    <div className="detail"><label>Qualified</label><strong>{selectedScan.triggerTime}{selectedScan.qualifiedAt ? ` · ${formatEtStamp(selectedScan.qualifiedAt)}` : ""}</strong></div>
                                     <div className="detail"><label>Score</label><strong>{selectedScan.score}</strong></div>
                                     <div className="detail"><label>Direction</label><strong>{selectedScan.direction}</strong></div>
                                     <div className="detail"><label>Entry</label><strong>{selectedScan.entry.toFixed(2)}</strong></div>
@@ -442,7 +458,7 @@ function App() {
                             <table>
                                 <thead>
                                     <tr>
-                                        <th>Symbol</th><th>Horizon</th><th>Setup</th><th>State</th><th>Score</th><th>RS Rank</th><th>Entry</th><th>R:R</th>
+                                        <th>Symbol</th><th>Horizon</th><th>Setup</th><th>Qualified</th><th>State</th><th>Score</th><th>RS Rank</th><th>Entry</th><th>R:R</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -460,6 +476,7 @@ function App() {
                                             <td>
                                                 <span className="badge badge-state">{setupLabel(row.setupType)}</span>
                                             </td>
+                                            <td>{row.triggerTime || formatEtStamp(row.qualifiedAt, false)}</td>
                                             <td>
                                                 <span className={row.qualified ? "badge badge-qualified" : "badge badge-state"}>{row.state}</span>
                                             </td>
@@ -479,6 +496,7 @@ function App() {
                                     <div className="detail"><label>Symbol</label><strong>{selectedSwing.symbol}</strong></div>
                                     <div className="detail"><label>Horizon</label><strong>{horizonLabel(selectedSwing.horizonId)}</strong></div>
                                     <div className="detail"><label>Setup</label><strong>{setupLabel(selectedSwing.setupType)}</strong></div>
+                                    <div className="detail"><label>Qualified</label><strong>{selectedSwing.triggerTime || formatEtStamp(selectedSwing.qualifiedAt, false)}</strong></div>
                                     <div className="detail"><label>State</label><strong>{selectedSwing.state}</strong></div>
                                     <div className="detail"><label>Score</label><strong>{selectedSwing.score}</strong></div>
                                     <div className="detail"><label>RS Rank</label><strong>#{selectedSwing.rsRank} ({(selectedSwing.rs * 100).toFixed(1)}% vs SPY)</strong></div>
@@ -547,7 +565,7 @@ function App() {
                                 <table>
                                     <thead>
                                         <tr>
-                                            <th>Date</th>
+                                            <th>Logged</th>
                                             <th>Scope</th>
                                             <th>Symbol</th>
                                             <th>Playbook</th>
@@ -561,7 +579,7 @@ function App() {
                                     <tbody>
                                         {journalEntries.map(e => (
                                             <tr key={e.id}>
-                                                <td>{e.sessionDate}</td>
+                                                <td title={e.loggedAt}>{formatEtStamp(e.loggedAt)}</td>
                                                 <td>{e.scope}</td>
                                                 <td>{e.symbol}</td>
                                                 <td>{e.playbook}</td>
