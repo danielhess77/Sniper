@@ -84,10 +84,9 @@ function OptionBlock({ option }: { option: OptionSuggestion }) {
                     <div className="detail"><label>Mid / Spread</label><strong>{option.mid.toFixed(2)} · {option.spreadPct}%</strong></div>
                     <div className="detail"><label>Delta</label><strong>{option.delta}</strong></div>
                     <div className="detail"><label>OI / Vol</label><strong>{option.openInterest} / {option.volume}</strong></div>
-                    <div className="detail"><label>Why</label><strong>{option.reason}</strong></div>
                 </>
             ) : (
-                <div className="detail"><label>Why</label><strong>{option.reason}</strong></div>
+                <div className="detail"><label>Note</label><strong>{option.reason}</strong></div>
             )}
         </>
     );
@@ -124,7 +123,6 @@ function App() {
     async function refreshScan() {
         try {
             const scanResponse = await getScan();
-            // UI only: actionable (qualified) rows
             const visible = scanResponse.results.filter(r => r.qualified);
             setResults(visible);
             setWatchlistCount(scanResponse.watchlist);
@@ -147,7 +145,6 @@ function App() {
     async function refreshSwing() {
         try {
             const swingResponse = await getSwing();
-            // Drop invalid — keep watching + qualified only
             const visible = swingResponse.results.filter(
                 r => r.state !== "invalid" && String(r.state).toLowerCase() !== "invalid"
             );
