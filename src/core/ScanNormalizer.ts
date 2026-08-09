@@ -22,33 +22,38 @@ export function normalizeScan(
         result.trade ??
         result.risk;
 
+    // Prefer explicit trade direction (Failed OR fades opposite the breakout)
     const direction =
 
-        result.trend?.direction ??
-
         result.openingRange?.direction ??
+
+        result.trend?.direction ??
 
         "NONE";
 
     const signalIndex =
 
-        result.confirmation?.candleIndex >= 0
+        result.openingRange?.failIndex >= 0
 
-            ? result.confirmation.candleIndex
+            ? result.openingRange.failIndex
 
-            : result.openingRange?.breakoutIndex >= 0
+            : result.confirmation?.candleIndex >= 0
 
-                ? result.openingRange.breakoutIndex
+                ? result.confirmation.candleIndex
 
-                : result.reclaim?.candleIndex >= 0
+                : result.openingRange?.breakoutIndex >= 0
 
-                    ? result.reclaim.candleIndex
+                    ? result.openingRange.breakoutIndex
 
-                    : result.pullback?.candleIndex >= 0
+                    : result.reclaim?.candleIndex >= 0
 
-                        ? result.pullback.candleIndex
+                        ? result.reclaim.candleIndex
 
-                        : -1;
+                        : result.pullback?.candleIndex >= 0
+
+                            ? result.pullback.candleIndex
+
+                            : -1;
 
     const signalCandle =
 

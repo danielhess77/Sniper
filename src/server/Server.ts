@@ -1,7 +1,8 @@
 /**
- * Sniper Server v2.4
+ * Sniper Server v2.5
  *
  * Express API: 0DTE scan + RVOL + Swing + Watchlist editor.
+ * Intraday playbooks: 5 (includes Failed Opening Range).
  */
 
 import express from "express";
@@ -16,6 +17,7 @@ import { watchlistStore } from "../config/WatchlistStore.js";
 
 import { TrendContinuation } from "../playbooks/TrendContinuation.js";
 import { OpeningRangeBreakout } from "../playbooks/OpeningRangeBreakout.js";
+import { FailedOpeningRangeBreakout } from "../playbooks/FailedOpeningRangeBreakout.js";
 import { VWAPReclaim } from "../playbooks/VWAPReclaim.js";
 import { FirstPullback } from "../playbooks/FirstPullback.js";
 
@@ -25,36 +27,29 @@ app.use(cors());
 
 app.use(express.json({ limit: "32kb" }));
 
-// Load watchlist from data/watchlist.json (or seed defaults)
 watchlistStore.load();
 
 const bdk = new BDKClient();
 
-const scanner = new Scanner(
+const PLAYBOOKS = [
 
-    bdk,
+    new TrendContinuation(),
 
-    [
+    new OpeningRangeBreakout(),
 
-        new TrendContinuation(),
+    new FailedOpeningRangeBreakout(),
 
-        new OpeningRangeBreakout(),
+    new VWAPReclaim(),
 
-        new VWAPReclaim(),
+    new FirstPullback()
 
-        new FirstPullback()
+];
 
-    ]
-
-);
+const scanner = new Scanner(bdk, PLAYBOOKS);
 
 const swingScanner = new SwingScanner(bdk);
 
 const rvolEngine = new RvolEngine(bdk);
-
-//--------------------------------------------------
-// Health Check
-//--------------------------------------------------
 
 app.get(
 
@@ -70,17 +65,15 @@ app.get(
 
             timestamp: new Date().toISOString(),
 
-            watchlist: watchlistStore.count()
+            watchlist: watchlistStore.count(),
+
+            playbooks: PLAYBOOKS.length
 
         });
 
     }
 
 );
-
-//--------------------------------------------------
-// Watchlist editor
-//--------------------------------------------------
 
 app.get(
 
@@ -164,10 +157,6 @@ app.put(
 
 );
 
-//--------------------------------------------------
-// Live 0DTE Scan
-//--------------------------------------------------
-
 app.get(
 
     "/scan",
@@ -207,7 +196,7 @@ app.get(
                 watchlist:
                     list.length,
 
-                playbooks: 4,
+                playbooks: PLAYBOOKS.length,
 
                 total:
                     results.length,
@@ -245,10 +234,6 @@ app.get(
     }
 
 );
-
-//--------------------------------------------------
-// Swing Scan (Short + Intermediate)
-//--------------------------------------------------
 
 app.get(
 
@@ -318,10 +303,6 @@ app.get(
 
 );
 
-//--------------------------------------------------
-// Relative Volume Leaderboard
-//--------------------------------------------------
-
 app.get(
 
     "/rvol",
@@ -366,10 +347,6 @@ app.get(
 
 );
 
-//--------------------------------------------------
-// Start Server
-//--------------------------------------------------
-
 const PORT = 3000;
 
 app.listen(
@@ -382,49 +359,27 @@ app.listen(
 
         console.log("====================================");
 
-        console.log("        SNIPER API v2.4");
+        console.log("        SNIPER API v2.5");
 
         console.log("====================================");
 
         console.log("");
 
-        console.log(
+        console.log(`Health    : http://localhost:${PORT}/health`);
 
-            `Health    : http://localhost:${PORT}/health`
+        console.log(`Scan      : http://localhost:${PORT}/scan`);
 
-        );
+        console.log(`Swing     : http://localhost:${PORT}/swing`);
 
-        console.log(
+        console.log(`RVOL      : http://localhost:${PORT}/rvol`);
 
-            `Scan      : http://localhost:${PORT}/scan`
-
-        );
-
-        console.log(
-
-            `Swing     : http://localhost:${PORT}/swing`
-
-        );
-
-        console.log(
-
-            `RVOL      : http://localhost:${PORT}/rvol`
-
-        );
-
-        console.log(
-
-            `Watchlist : http://localhost:${PORT}/watchlist`
-
-        );
+        console.log(`Watchlist : http://localhost:${PORT}/watchlist`);
 
         console.log("");
 
-        console.log(
+        console.log(`Playbooks : ${PLAYBOOKS.length}`);
 
-            `Loaded ${watchlistStore.count()} symbols from data/watchlist.json`
-
-        );
+        console.log(`Loaded ${watchlistStore.count()} symbols`);
 
         console.log("Ready for React UI");
 
