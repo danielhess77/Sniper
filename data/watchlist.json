@@ -18,7 +18,6 @@
     "AMZN",
     "DIS",
     "NKE",
-    "MCD",
     "COST",
     "HOOD",
     "PYPL",
@@ -34,6 +33,7 @@
     "XBI",
     "PFE",
     "ABBV",
-    "RGTI"
+    "RGTI",
+    "IWM"
   ]
 }
