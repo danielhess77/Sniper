@@ -1,10 +1,7 @@
 /**
  * Sniper Journal Store
  *
- * Version: 1.0
- *
- * Persists qualified trade signals to data/journal.json.
- * Auto-logs qualified only (deduped). Supports manual Taken + outcome updates.
+ * Version: 1.1
  */
 
 import fs from "fs";
@@ -25,7 +22,6 @@ function filePath(): string {
 
 }
 
-/** Calendar date in America/New_York */
 export function etSessionDate(
 
     d: Date = new Date()
@@ -147,9 +143,6 @@ export class JournalStore {
 
     }
 
-    /**
-     * Log a qualified setup. Returns the entry if newly created, null if deduped.
-     */
     logQualified(input: {
 
         scope: JournalScope;
@@ -176,6 +169,9 @@ export class JournalStore {
 
         rsRank?: number;
 
+        /** Optional real signal day YYYY-MM-DD ET */
+        sessionDate?: string;
+
     }): JournalEntry | null {
 
         if (!input.symbol || input.entry <= 0 || input.stop <= 0) {
@@ -190,7 +186,7 @@ export class JournalStore {
 
         }
 
-        const sessionDate = etSessionDate();
+        const sessionDate = input.sessionDate || etSessionDate();
 
         const setupType = input.setupType || "—";
 
@@ -346,6 +342,60 @@ export class JournalStore {
 
     }
 
+    /** Put a resolved row back to open (fix stop-outs, etc.) */
+    reopen(
+
+        id: string
+
+    ): JournalEntry | null {
+
+        const row = this.entries.find(e => e.id === id);
+
+        if (!row) return null;
+
+        row.outcome = "open";
+
+        row.rMultiple = null;
+
+        row.exitPrice = null;
+
+        row.resolvedAt = null;
+
+        this.persist();
+
+        return { ...row };
+
+    }
+
+    /** Reopen every stop-marked row (bulk fix after resolver bug) */
+    reopenAllStops(): number {
+
+        let n = 0;
+
+        for (const row of this.entries) {
+
+            if (row.outcome === "stop") {
+
+                row.outcome = "open";
+
+                row.rMultiple = null;
+
+                row.exitPrice = null;
+
+                row.resolvedAt = null;
+
+                n++;
+
+            }
+
+        }
+
+        if (n) this.persist();
+
+        return n;
+
+    }
+
     summary(): JournalSummary {
 
         const all = this.entries;
@@ -394,14 +444,6 @@ export class JournalStore {
 
         };
 
-        const expectancy = (rows: JournalEntry[]) => {
-
-            const a = avg(rows);
-
-            return a;
-
-        };
-
         const byMap = new Map<string, JournalEntry[]>();
 
         for (const e of resolved) {
@@ -446,7 +488,7 @@ export class JournalStore {
 
             avgR: avg(resolved),
 
-            expectancy: expectancy(resolved),
+            expectancy: avg(resolved),
 
             takenYes: all.filter(e => e.taken === "yes").length,
 
@@ -456,7 +498,7 @@ export class JournalStore {
 
             takenAvgR: avg(takenRows),
 
-            takenExpectancy: expectancy(takenRows),
+            takenExpectancy: avg(takenRows),
 
             byPlaybook
 

@@ -1,19 +1,44 @@
 /**
  * Sniper Journal Resolver
  *
- * Version: 1.0
+ * Version: 1.1
  *
- * Resolves open journal entries against subsequent price history.
- * Hit stop vs target by bar path; expire after max sessions.
+ * Swings: only evaluate daily bars AFTER the signal/session day.
+ * Entry-day low at the stop is structural, not a stop-out.
  */
 
 import { BDKClient, Candle } from "../core/BDKClient.js";
 import { journalStore } from "./JournalStore.js";
 import type { JournalEntry } from "./JournalTypes.js";
 
+function etDateString(ms: number): string {
+
+    return new Intl.DateTimeFormat("en-CA", {
+
+        timeZone: "America/New_York",
+
+        year: "numeric",
+
+        month: "2-digit",
+
+        day: "2-digit"
+
+    }).format(new Date(ms));
+
+}
+
+function candleMs(c: Candle): number {
+
+    return typeof c.datetime === "number"
+
+        ? c.datetime
+
+        : Date.parse(String(c.datetime));
+
+}
+
 export class JournalResolver {
 
-    /** Intraday: expire same session after this many ET calendar days from log */
     private static readonly INTRADAY_MAX_DAYS = 1;
 
     private static readonly SWING_SHORT_MAX_DAYS = 5;
@@ -32,7 +57,6 @@ export class JournalResolver {
 
         let resolved = 0;
 
-        // Group by symbol to limit API calls
         const bySymbol = new Map<string, JournalEntry[]>();
 
         for (const e of open) {
@@ -49,7 +73,8 @@ export class JournalResolver {
 
             try {
 
-                daily = await this.bdk.getDailyHistory(symbol, 3);
+                // Need enough history for intermediate swings
+                daily = await this.bdk.getDailyHistory(symbol, 2);
 
             } catch (err) {
 
@@ -101,24 +126,30 @@ export class JournalResolver {
 
         if (risk <= 0) return null;
 
-        const loggedMs = Date.parse(entry.loggedAt);
+        const signalDay =
+            entry.sessionDate ||
+            etDateString(Date.parse(entry.loggedAt));
 
-        // Bars on/after session date
-        const bars = daily.filter(c => {
+        /**
+         * Swing / daily path: ONLY bars with ET date STRICTLY AFTER signal day.
+         * Intraday journal rows also use daily here as a coarse fallback —
+         * still skip signal day to avoid same-bar false stops.
+         */
+        const bars = daily
 
-            const t = typeof c.datetime === "number" ? c.datetime : Date.parse(String(c.datetime));
+            .filter(c => {
 
-            // Include bar if on or after log day (daily bars are coarse)
-            return t >= loggedMs - 12 * 60 * 60 * 1000;
+                const ms = candleMs(c);
 
-        });
+                if (!Number.isFinite(ms)) return false;
 
-        if (!bars.length) {
+                const barDay = etDateString(ms);
 
-            // Try all daily if filter empty
-            bars.push(...daily.slice(-10));
+                return barDay > signalDay;
 
-        }
+            })
+
+            .sort((a, b) => candleMs(a) - candleMs(b));
 
         for (const bar of bars) {
 
@@ -128,9 +159,9 @@ export class JournalResolver {
 
                 const hitTarget = bar.high >= entry.target;
 
+                // Same later bar tags both: conservative stop-first
                 if (hitStop && hitTarget) {
 
-                    // Conservative: assume stop first on same bar
                     return {
 
                         outcome: "stop",
@@ -227,7 +258,6 @@ export class JournalResolver {
 
         }
 
-        // Expire?
         const maxDays =
             entry.scope === "intraday"
 
@@ -239,12 +269,28 @@ export class JournalResolver {
 
                     : JournalResolver.SWING_SHORT_MAX_DAYS;
 
+        // Age from signal session, not log clock (weekend logs shouldn't age out early)
+        const signalMs = Date.parse(`${signalDay}T16:00:00-04:00`);
+
         const ageDays =
-            (Date.now() - loggedMs) / (24 * 60 * 60 * 1000);
+            (Date.now() - (Number.isFinite(signalMs) ? signalMs : Date.parse(entry.loggedAt))) /
+            (24 * 60 * 60 * 1000);
 
-        if (ageDays >= maxDays && bars.length) {
+        if (ageDays >= maxDays) {
 
-            const last = bars[bars.length - 1];
+            // Prefer last post-signal bar; else last available daily close
+            const last =
+                bars.length
+
+                    ? bars[bars.length - 1]
+
+                    : daily.length
+
+                        ? daily[daily.length - 1]
+
+                        : null;
+
+            if (!last) return null;
 
             const exit = last.close;
 
@@ -272,6 +318,7 @@ export class JournalResolver {
 
         }
 
+        // Still open — no post-signal path hit yet (e.g. weekend after Friday signal)
         return null;
 
     }
