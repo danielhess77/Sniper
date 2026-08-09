@@ -24,6 +24,8 @@ export interface ScanCard {
     symbol: string;
     playbook: string;
     triggerTime: string;
+    /** ISO when structure became valid */
+    qualifiedAt?: string | null;
     qualified: boolean;
     score: number;
     direction: "BULLISH" | "BEARISH" | "NONE";
@@ -60,6 +62,9 @@ export interface SwingCard {
     rs: number;
     reason: string;
     setupType?: "PULLBACK" | "TIGHT_BASE" | string;
+    /** Display date of trigger bar */
+    triggerTime?: string;
+    qualifiedAt?: string | null;
     option?: OptionSuggestion | null;
 }
 
