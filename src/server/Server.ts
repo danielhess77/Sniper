@@ -320,7 +320,6 @@ app.post(
 
 );
 
-/** Bulk fix: put every stop-marked row back to open */
 app.post(
 
     "/journal/reopen-stops",
@@ -336,6 +335,33 @@ app.post(
             timestamp: new Date().toISOString(),
 
             reopened,
+
+            summary: journalStore.summary(),
+
+            entries: journalStore.list()
+
+        });
+
+    }
+
+);
+
+/** Drop clone rows; keep best per symbol/setup/entry (prefer open) */
+app.post(
+
+    "/journal/cleanup-duplicates",
+
+    (_, res) => {
+
+        const result = journalStore.cleanupDuplicates();
+
+        res.json({
+
+            success: true,
+
+            timestamp: new Date().toISOString(),
+
+            ...result,
 
             summary: journalStore.summary(),
 
