@@ -6,11 +6,22 @@ import {
     getSwing,
     getRvol,
     getWatchlist,
-    putWatchlist
+    putWatchlist,
+    getJournal,
+    patchJournal,
+    resolveJournal
 } from "./api";
-import type { ScanCard, SwingCard, RvolCard, OptionSuggestion } from "./api";
+import type {
+    ScanCard,
+    SwingCard,
+    RvolCard,
+    OptionSuggestion,
+    JournalEntry,
+    JournalSummary,
+    TakenStatus
+} from "./api";
 
-type TabId = "intraday" | "swing" | "rvol" | "watchlist";
+type TabId = "intraday" | "swing" | "rvol" | "watchlist" | "journal";
 type SwingFilter = "ALL" | "SHORT" | "INTERMEDIATE";
 
 function formatVolume(n: number): string {
@@ -29,6 +40,17 @@ function setupLabel(t?: string): string {
     if (t === "TIGHT_BASE") return "Tight Base";
     if (t === "PULLBACK") return "Pullback";
     return t || "—";
+}
+
+function fmtPct(n: number | null): string {
+    if (n === null || n === undefined) return "—";
+    return `${(n * 100).toFixed(0)}%`;
+}
+
+function fmtR(n: number | null): string {
+    if (n === null || n === undefined) return "—";
+    const s = n >= 0 ? "+" : "";
+    return `${s}${n.toFixed(2)}R`;
 }
 
 function OptionBlock({ option }: { option: OptionSuggestion }) {
@@ -81,6 +103,9 @@ function App() {
     const [watchlistDirty, setWatchlistDirty] = useState(false);
     const [watchlistSaving, setWatchlistSaving] = useState(false);
     const [watchlistMsg, setWatchlistMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+    const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([]);
+    const [journalSummary, setJournalSummary] = useState<JournalSummary | null>(null);
+    const [journalBusy, setJournalBusy] = useState(false);
 
     async function refreshScan() {
         try {
@@ -148,11 +173,45 @@ function App() {
         }
     }
 
+    async function refreshJournal() {
+        try {
+            const response = await getJournal();
+            setJournalEntries(response.entries);
+            setJournalSummary(response.summary);
+        } catch {
+            if (tab === "journal") setError("Unable to reach Journal endpoint");
+        }
+    }
+
+    async function setTaken(id: string, taken: TakenStatus) {
+        try {
+            const response = await patchJournal(id, { taken });
+            setJournalEntries(response.entries);
+            setJournalSummary(response.summary);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "Failed to update Taken");
+        }
+    }
+
+    async function runResolve() {
+        setJournalBusy(true);
+        try {
+            const response = await resolveJournal();
+            setJournalEntries(response.entries);
+            setJournalSummary(response.summary);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "Resolve failed");
+        } finally {
+            setJournalBusy(false);
+        }
+    }
+
     useEffect(() => {
         refreshScan();
         refreshSwing();
         refreshRvol();
         refreshWatchlist();
+        refreshJournal();
         const scanTimer = setInterval(refreshScan, 60_000);
         const swingTimer = setInterval(refreshSwing, 5 * 60_000);
         const rvolTimer = setInterval(refreshRvol, 30 * 60_000);
@@ -219,7 +278,8 @@ function App() {
         tab === "intraday" ? "Institutional Intraday Scanner"
             : tab === "swing" ? "RS + Pullback / Tight Base Swings"
                 : tab === "rvol" ? "Opening + Day Relative Volume"
-                    : "Watchlist Editor";
+                    : tab === "journal" ? "Qualified Signal Journal & Performance"
+                        : "Watchlist Editor";
 
     function renderRvolTable(rows: RvolCard[], showQuoteCols: boolean) {
         if (!rows.length) {
@@ -272,15 +332,28 @@ function App() {
                         <strong>{loading ? "LOADING" : "LIVE"}</strong>
                     </div>
                     <div>
-                        <span>{tab === "rvol" ? "Last RVOL" : tab === "swing" ? "Last Swing" : tab === "watchlist" ? "Symbols" : "Last Scan"}</span>
+                        <span>
+                            {tab === "rvol" ? "Last RVOL"
+                                : tab === "swing" ? "Last Swing"
+                                    : tab === "watchlist" ? "Symbols"
+                                        : tab === "journal" ? "Entries"
+                                            : "Last Scan"}
+                        </span>
                         <strong>
-                            {tab === "rvol" ? lastRvol || "--" : tab === "swing" ? lastSwing || "--" : tab === "watchlist" ? symbols.length : lastScan || "--"}
+                            {tab === "rvol" ? lastRvol || "--"
+                                : tab === "swing" ? lastSwing || "--"
+                                    : tab === "watchlist" ? symbols.length
+                                        : tab === "journal" ? journalEntries.length
+                                            : lastScan || "--"}
                         </strong>
                     </div>
                     <div>
                         <span>Refresh</span>
                         <strong>
-                            {tab === "rvol" ? "30 min" : tab === "swing" ? "5 min" : tab === "watchlist" ? "manual" : "60 sec"}
+                            {tab === "rvol" ? "30 min"
+                                : tab === "swing" ? "5 min"
+                                    : tab === "watchlist" || tab === "journal" ? "manual"
+                                        : "60 sec"}
                         </strong>
                     </div>
                 </div>
@@ -290,6 +363,7 @@ function App() {
                 <button className={`tab ${tab === "intraday" ? "active" : ""}`} onClick={() => setTab("intraday")}>Intraday</button>
                 <button className={`tab ${tab === "swing" ? "active" : ""}`} onClick={() => setTab("swing")}>Swing</button>
                 <button className={`tab ${tab === "rvol" ? "active" : ""}`} onClick={() => setTab("rvol")}>RVOL</button>
+                <button className={`tab ${tab === "journal" ? "active" : ""}`} onClick={() => { setTab("journal"); refreshJournal(); }}>Journal</button>
                 <button className={`tab ${tab === "watchlist" ? "active" : ""}`} onClick={() => { setTab("watchlist"); refreshWatchlist(); }}>Watchlist</button>
             </div>
 
@@ -441,6 +515,115 @@ function App() {
                         </div>
                         {renderRvolTable(rvolLive, true)}
                     </section>
+                </>
+            )}
+
+            {tab === "journal" && (
+                <>
+                    <section className="summary">
+                        <div className="card"><span>Logged</span><strong>{journalSummary?.total ?? 0}</strong></div>
+                        <div className="card"><span>Open</span><strong>{journalSummary?.open ?? 0}</strong></div>
+                        <div className="card"><span>Win Rate</span><strong>{fmtPct(journalSummary?.winRate ?? null)}</strong></div>
+                        <div className="card"><span>Expectancy</span><strong>{fmtR(journalSummary?.expectancy ?? null)}</strong></div>
+                    </section>
+                    <section className="summary" style={{ marginTop: 0 }}>
+                        <div className="card"><span>Taken</span><strong>{journalSummary?.takenYes ?? 0}</strong></div>
+                        <div className="card"><span>Taken Win %</span><strong>{fmtPct(journalSummary?.takenWinRate ?? null)}</strong></div>
+                        <div className="card"><span>Taken Avg R</span><strong>{fmtR(journalSummary?.takenAvgR ?? null)}</strong></div>
+                        <div className="card"><span>Taken Exp</span><strong>{fmtR(journalSummary?.takenExpectancy ?? null)}</strong></div>
+                    </section>
+                    <div className="filters" style={{ marginBottom: 16 }}>
+                        <button className="filterBtn" type="button" disabled={journalBusy} onClick={() => refreshJournal()}>Refresh</button>
+                        <button className="filterBtn active" type="button" disabled={journalBusy} onClick={runResolve}>
+                            {journalBusy ? "Resolving…" : "Resolve open vs price"}
+                        </button>
+                    </div>
+                    <section className="content">
+                        <div className="tablePanel" style={{ width: "100%" }}>
+                            <div className="panelHeader">Qualified signals (auto-logged)</div>
+                            {!journalEntries.length ? (
+                                <div className="rvolEmpty">No journal entries yet — run scans; qualified setups log automatically.</div>
+                            ) : (
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>Date</th>
+                                            <th>Scope</th>
+                                            <th>Symbol</th>
+                                            <th>Playbook</th>
+                                            <th>Dir</th>
+                                            <th>Entry</th>
+                                            <th>Outcome</th>
+                                            <th>R</th>
+                                            <th>Taken</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {journalEntries.map(e => (
+                                            <tr key={e.id}>
+                                                <td>{e.sessionDate}</td>
+                                                <td>{e.scope}</td>
+                                                <td>{e.symbol}</td>
+                                                <td>{e.playbook}</td>
+                                                <td>{e.direction}</td>
+                                                <td>{e.entry.toFixed(2)}</td>
+                                                <td>
+                                                    <span className={e.outcome === "target" ? "badge badge-qualified" : "badge badge-state"}>
+                                                        {e.outcome}
+                                                    </span>
+                                                </td>
+                                                <td style={{ color: (e.rMultiple ?? 0) >= 0 ? "#31d07d" : "#ff5d73" }}>
+                                                    {e.rMultiple === null ? "—" : fmtR(e.rMultiple)}
+                                                </td>
+                                                <td>
+                                                    <select
+                                                        value={e.taken}
+                                                        onChange={ev => setTaken(e.id, ev.target.value as TakenStatus)}
+                                                        style={{
+                                                            background: "#121a2b",
+                                                            color: "#e8eefc",
+                                                            border: "1px solid #283852",
+                                                            borderRadius: 6,
+                                                            padding: "4px 6px"
+                                                        }}
+                                                    >
+                                                        <option value="unknown">?</option>
+                                                        <option value="yes">Yes</option>
+                                                        <option value="no">No</option>
+                                                    </select>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            )}
+                        </div>
+                    </section>
+                    {journalSummary && journalSummary.byPlaybook.length > 0 && (
+                        <section className="rvolPanel" style={{ marginTop: 24 }}>
+                            <div className="panelHeader">By playbook (resolved)</div>
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Playbook</th>
+                                        <th>N</th>
+                                        <th>Wins</th>
+                                        <th>Avg R</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {journalSummary.byPlaybook.map(row => (
+                                        <tr key={row.playbook}>
+                                            <td>{row.playbook}</td>
+                                            <td>{row.n}</td>
+                                            <td>{row.wins}</td>
+                                            <td>{fmtR(row.avgR)}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </section>
+                    )}
                 </>
             )}
 
