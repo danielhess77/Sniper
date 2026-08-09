@@ -42,7 +42,11 @@ export interface ScanCard {
 
     playbook: string;
 
+    /** Display time of signal candle (ET) */
     triggerTime: string;
+
+    /** ISO timestamp when structure became valid (signal candle) */
+    qualifiedAt: string | null;
 
     qualified: boolean;
 
@@ -61,7 +65,6 @@ export interface ScanCard {
 
     riskReward: number;
 
-    /** Suggested long call/put when available */
     option?: OptionSuggestion | null;
 
 }

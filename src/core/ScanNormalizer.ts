@@ -8,6 +8,26 @@
 import { Candle } from "./BDKClient.js";
 import type { ScanCard } from "../types.js";
 
+function formatEtTime(ms: number): string {
+
+    return new Date(ms).toLocaleTimeString("en-US", {
+
+        timeZone: "America/New_York",
+
+        hour: "numeric",
+
+        minute: "2-digit"
+
+    });
+
+}
+
+function toIso(ms: number): string {
+
+    return new Date(ms).toISOString();
+
+}
+
 export function normalizeScan(
 
     symbol: string,
@@ -72,22 +92,29 @@ export function normalizeScan(
 
             : undefined;
 
-    const triggerTime =
+    const signalMs =
 
         signalCandle
 
-            ? new Date(
-                signalCandle.datetime
-            ).toLocaleTimeString(
-                "en-US",
-                {
-                    timeZone: "America/New_York",
-                    hour: "numeric",
-                    minute: "2-digit"
-                }
-            )
+            ? Number(signalCandle.datetime)
+
+            : NaN;
+
+    const triggerTime =
+
+        Number.isFinite(signalMs)
+
+            ? formatEtTime(signalMs)
 
             : "--";
+
+    const qualifiedAt =
+
+        result.qualified && Number.isFinite(signalMs)
+
+            ? toIso(signalMs)
+
+            : null;
 
     return {
 
@@ -97,6 +124,8 @@ export function normalizeScan(
             result.playbook,
 
         triggerTime,
+
+        qualifiedAt,
 
         qualified:
             result.qualified,

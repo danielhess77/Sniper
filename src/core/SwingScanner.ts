@@ -2,13 +2,9 @@
  * Sniper
  * Swing Scanner
  *
- * Version: 1.2
+ * Version: 1.3
  *
- * Two setup paths per horizon:
- *  - RS + Pullback (existing)
- *  - RS + Tight Base Breakout (new)
- *
- * Qualified setups get horizon-aware long CALL suggestions.
+ * Adds qualifiedAt from the daily trigger bar.
  */
 
 import { BDKClient, Candle } from "./BDKClient.js";
@@ -51,7 +47,61 @@ export interface SwingCard {
 
     setupType: "PULLBACK" | "TIGHT_BASE";
 
+    /** Display: ET date of trigger bar */
+    triggerTime: string;
+
+    /** ISO of trigger daily bar (when setup became valid) */
+    qualifiedAt: string | null;
+
     option?: OptionSuggestion | null;
+
+}
+
+function formatEtDate(ms: number): string {
+
+    return new Date(ms).toLocaleDateString("en-US", {
+
+        timeZone: "America/New_York",
+
+        month: "short",
+
+        day: "numeric",
+
+        year: "numeric"
+
+    });
+
+}
+
+function barTime(
+
+    candles: Candle[],
+
+    index: number
+
+): { display: string; iso: string | null } {
+
+    if (index < 0 || index >= candles.length) {
+
+        return { display: "—", iso: null };
+
+    }
+
+    const ms = Number(candles[index].datetime);
+
+    if (!Number.isFinite(ms)) {
+
+        return { display: "—", iso: null };
+
+    }
+
+    return {
+
+        display: formatEtDate(ms),
+
+        iso: new Date(ms).toISOString()
+
+    };
 
 }
 
@@ -168,7 +218,6 @@ export class SwingScanner {
                 const rs =
                     rsBySymbol.get(history.symbol) ?? null;
 
-                // Path 1: Pullback
                 const pullback =
                     this.pullbackPlaybook.evaluate(
 
@@ -188,13 +237,12 @@ export class SwingScanner {
 
                     cards.push(
 
-                        this.fromPullback(history.symbol, pullback)
+                        this.fromPullback(history.symbol, history.candles, pullback)
 
                     );
 
                 }
 
-                // Path 2: Tight Base Breakout
                 const tight =
                     this.tightBasePlaybook.evaluate(
 
@@ -214,7 +262,7 @@ export class SwingScanner {
 
                     cards.push(
 
-                        this.fromTightBase(history.symbol, tight)
+                        this.fromTightBase(history.symbol, history.candles, tight)
 
                     );
 
@@ -275,9 +323,14 @@ export class SwingScanner {
 
         symbol: string,
 
+        candles: Candle[],
+
         result: SwingResult
 
     ): SwingCard {
+
+        const t =
+            barTime(candles, result.pullback.triggerIndex);
 
         return {
 
@@ -309,7 +362,11 @@ export class SwingScanner {
 
             reason: result.pullback.reason,
 
-            setupType: "PULLBACK"
+            setupType: "PULLBACK",
+
+            triggerTime: t.display,
+
+            qualifiedAt: result.qualified ? t.iso : null
 
         };
 
@@ -319,9 +376,14 @@ export class SwingScanner {
 
         symbol: string,
 
+        candles: Candle[],
+
         result: SwingTightBaseResult
 
     ): SwingCard {
+
+        const t =
+            barTime(candles, result.base.triggerIndex);
 
         return {
 
@@ -353,7 +415,11 @@ export class SwingScanner {
 
             reason: result.base.reason,
 
-            setupType: "TIGHT_BASE"
+            setupType: "TIGHT_BASE",
+
+            triggerTime: t.display,
+
+            qualifiedAt: result.qualified ? t.iso : null
 
         };
 
