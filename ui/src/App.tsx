@@ -53,7 +53,6 @@ function fmtR(n: number | null): string {
     return `${s}${n.toFixed(2)}R`;
 }
 
-/** ET clock/date for qualified / logged timestamps */
 function formatEtStamp(iso: string | null | undefined, withTime = true): string {
     if (!iso) return "—";
     const d = new Date(iso);
@@ -125,15 +124,17 @@ function App() {
     async function refreshScan() {
         try {
             const scanResponse = await getScan();
-            setResults(scanResponse.results);
+            // UI only: actionable (qualified) rows
+            const visible = scanResponse.results.filter(r => r.qualified);
+            setResults(visible);
             setWatchlistCount(scanResponse.watchlist);
             setPlaybooks(scanResponse.playbooks);
             setQualified(scanResponse.qualified);
             setLastScan(new Date(scanResponse.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
             setSelectedScan(prev => {
-                if (!scanResponse.results.length) return null;
-                if (!prev) return scanResponse.results[0];
-                return scanResponse.results.find(r => r.symbol === prev.symbol && r.playbook === prev.playbook) ?? scanResponse.results[0];
+                if (!visible.length) return null;
+                if (!prev) return visible[0];
+                return visible.find(r => r.symbol === prev.symbol && r.playbook === prev.playbook) ?? visible[0];
             });
             setError("");
         } catch {
@@ -146,17 +147,21 @@ function App() {
     async function refreshSwing() {
         try {
             const swingResponse = await getSwing();
-            setSwingResults(swingResponse.results);
+            // Drop invalid — keep watching + qualified only
+            const visible = swingResponse.results.filter(
+                r => r.state !== "invalid" && String(r.state).toLowerCase() !== "invalid"
+            );
+            setSwingResults(visible);
             setSwingQualified(swingResponse.qualified);
             setSwingWatching(swingResponse.watching);
             setWatchlistCount(swingResponse.watchlist);
             setLastSwing(new Date(swingResponse.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
             setSelectedSwing(prev => {
-                if (!swingResponse.results.length) return null;
-                if (!prev) return swingResponse.results[0];
-                return swingResponse.results.find(
+                if (!visible.length) return null;
+                if (!prev) return visible[0];
+                return visible.find(
                     r => r.symbol === prev.symbol && r.horizonId === prev.horizonId && (r.setupType || "PULLBACK") === (prev.setupType || "PULLBACK")
-                ) ?? swingResponse.results[0];
+                ) ?? visible[0];
             });
         } catch {
             if (tab === "swing") setError("Unable to reach Swing endpoint");
@@ -238,8 +243,9 @@ function App() {
     }, []);
 
     const filteredSwing = useMemo(() => {
-        if (swingFilter === "ALL") return swingResults;
-        return swingResults.filter(r => r.horizonId === swingFilter);
+        let rows = swingResults.filter(r => r.state !== "invalid");
+        if (swingFilter === "ALL") return rows;
+        return rows.filter(r => r.horizonId === swingFilter);
     }, [swingResults, swingFilter]);
 
     const topScore = useMemo(() => (!results.length ? "--" : results[0].score), [results]);
@@ -394,7 +400,7 @@ function App() {
                     </section>
                     <section className="content">
                         <div className="tablePanel">
-                            <div className="panelHeader">Ranked Setups</div>
+                            <div className="panelHeader">Ranked Setups (qualified only)</div>
                             <table>
                                 <thead>
                                     <tr>
@@ -402,7 +408,9 @@ function App() {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {results.map(scan => (
+                                    {results.length === 0 ? (
+                                        <tr><td colSpan={7} style={{ color: "#8ea2c7" }}>No qualified intraday setups right now.</td></tr>
+                                    ) : results.map(scan => (
                                         <tr key={`${scan.symbol}-${scan.playbook}`} onClick={() => setSelectedScan(scan)}>
                                             <td>{scan.symbol}</td>
                                             <td>{scan.playbook}</td>
@@ -454,7 +462,7 @@ function App() {
                     </div>
                     <section className="content">
                         <div className="tablePanel">
-                            <div className="panelHeader">Swing Setups</div>
+                            <div className="panelHeader">Swing Setups (watching + qualified)</div>
                             <table>
                                 <thead>
                                     <tr>
@@ -462,7 +470,9 @@ function App() {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {filteredSwing.map(row => (
+                                    {filteredSwing.length === 0 ? (
+                                        <tr><td colSpan={9} style={{ color: "#8ea2c7" }}>No watching or qualified swing setups right now.</td></tr>
+                                    ) : filteredSwing.map(row => (
                                         <tr
                                             key={`${row.symbol}-${row.horizonId}-${row.setupType || "PULLBACK"}`}
                                             onClick={() => setSelectedSwing(row)}
