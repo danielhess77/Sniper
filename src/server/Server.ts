@@ -1,8 +1,8 @@
 /**
- * Sniper Server v2.5
+ * Sniper Server v2.6
  *
  * Express API: 0DTE scan + RVOL + Swing + Watchlist editor.
- * Intraday playbooks: 5 (includes Failed Opening Range).
+ * Intraday playbooks: 6 (Failed OR + Opening Drive Hold).
  */
 
 import express from "express";
@@ -18,6 +18,7 @@ import { watchlistStore } from "../config/WatchlistStore.js";
 import { TrendContinuation } from "../playbooks/TrendContinuation.js";
 import { OpeningRangeBreakout } from "../playbooks/OpeningRangeBreakout.js";
 import { FailedOpeningRangeBreakout } from "../playbooks/FailedOpeningRangeBreakout.js";
+import { OpeningDriveHold } from "../playbooks/OpeningDriveHold.js";
 import { VWAPReclaim } from "../playbooks/VWAPReclaim.js";
 import { FirstPullback } from "../playbooks/FirstPullback.js";
 
@@ -38,6 +39,8 @@ const PLAYBOOKS = [
     new OpeningRangeBreakout(),
 
     new FailedOpeningRangeBreakout(),
+
+    new OpeningDriveHold(),
 
     new VWAPReclaim(),
 
@@ -359,7 +362,7 @@ app.listen(
 
         console.log("====================================");
 
-        console.log("        SNIPER API v2.5");
+        console.log("        SNIPER API v2.6");
 
         console.log("====================================");
 
