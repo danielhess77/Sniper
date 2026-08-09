@@ -1,7 +1,10 @@
 /**
  * Sniper Journal Store
  *
- * Version: 1.1
+ * Version: 1.2
+ *
+ * Dedupe by signal family (scope/symbol/playbook/setup/entry)
+ * so weekend re-logs don't clone Friday setups.
  */
 
 import fs from "fs";
@@ -67,6 +70,31 @@ function makeDedupeKey(
         setupType || "—",
 
         sessionDate
+
+    ].join("|");
+
+}
+
+/** Same setup identity ignoring session day (catches clones) */
+function familyKey(
+
+    e: Pick<JournalEntry, "scope" | "symbol" | "playbook" | "setupType" | "entry" | "direction">
+
+): string {
+
+    return [
+
+        e.scope,
+
+        e.symbol.toUpperCase(),
+
+        e.playbook,
+
+        e.setupType || "—",
+
+        e.direction,
+
+        e.entry.toFixed(2)
 
     ].join("|");
 
@@ -169,7 +197,6 @@ export class JournalStore {
 
         rsRank?: number;
 
-        /** Optional real signal day YYYY-MM-DD ET */
         sessionDate?: string;
 
     }): JournalEntry | null {
@@ -205,6 +232,29 @@ export class JournalStore {
         );
 
         if (this.entries.some(e => e.dedupeKey === dedupeKey)) {
+
+            return null;
+
+        }
+
+        // Also block clones with same entry/setup even if sessionDate differs
+        const fam = familyKey({
+
+            scope: input.scope,
+
+            symbol: input.symbol,
+
+            playbook: input.playbook,
+
+            setupType,
+
+            entry: input.entry,
+
+            direction: input.direction
+
+        });
+
+        if (this.entries.some(e => familyKey(e) === fam)) {
 
             return null;
 
@@ -342,7 +392,6 @@ export class JournalStore {
 
     }
 
-    /** Put a resolved row back to open (fix stop-outs, etc.) */
     reopen(
 
         id: string
@@ -367,7 +416,6 @@ export class JournalStore {
 
     }
 
-    /** Reopen every stop-marked row (bulk fix after resolver bug) */
     reopenAllStops(): number {
 
         let n = 0;
@@ -393,6 +441,61 @@ export class JournalStore {
         if (n) this.persist();
 
         return n;
+
+    }
+
+    /**
+     * Keep one row per family (scope/symbol/playbook/setup/entry).
+     * Prefer open > other; then newest loggedAt.
+     */
+    cleanupDuplicates(): { removed: number; kept: number } {
+
+        const rank = (e: JournalEntry) => {
+
+            // Higher is better
+            let s = 0;
+
+            if (e.outcome === "open") s += 100;
+
+            else if (e.outcome === "target") s += 50;
+
+            else if (e.outcome === "expired") s += 20;
+
+            else if (e.outcome === "stop") s += 5;
+
+            s += Date.parse(e.loggedAt || "0") / 1e13;
+
+            return s;
+
+        };
+
+        const best = new Map<string, JournalEntry>();
+
+        for (const e of this.entries) {
+
+            const k = familyKey(e);
+
+            const prev = best.get(k);
+
+            if (!prev || rank(e) > rank(prev)) {
+
+                best.set(k, e);
+
+            }
+
+        }
+
+        const keepIds = new Set([...best.values()].map(e => e.id));
+
+        const before = this.entries.length;
+
+        this.entries = this.entries.filter(e => keepIds.has(e.id));
+
+        const removed = before - this.entries.length;
+
+        if (removed) this.persist();
+
+        return { removed, kept: this.entries.length };
 
     }
 
