@@ -63,6 +63,9 @@ export interface SwingCard {
     setupType?: "PULLBACK" | "TIGHT_BASE" | string;
     triggerTime?: string;
     qualifiedAt?: string | null;
+    confirmTf?: "30m" | null;
+    confirmStatus?: "confirmed" | "pending" | "n/a";
+    confirmReason?: string;
     option?: OptionSuggestion | null;
 }
 
