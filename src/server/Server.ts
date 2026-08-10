@@ -1,7 +1,8 @@
 /**
- * Sniper Server v2.9
+ * Sniper Server v2.10
  *
  * Express API: scan + swing + RVOL + watchlist + trade journal.
+ * Overlapping heavy scans rejected with 429 to protect BDK KV.
  */
 
 import express from "express";
@@ -70,6 +71,9 @@ function start(): void {
         const swingScanner = new SwingScanner(bdk);
         const rvolEngine = new RvolEngine(bdk);
 
+        let scanBusy = false;
+        let swingBusy = false;
+
         function etDayFromIso(iso: string | null | undefined): string | undefined {
             if (!iso) return undefined;
             const ms = Date.parse(iso);
@@ -91,7 +95,9 @@ function start(): void {
                 playbooks: PLAYBOOKS.length,
                 journal: journalStore.list().length,
                 pid: process.pid,
-                uptimeSec: Math.round(process.uptime())
+                uptimeSec: Math.round(process.uptime()),
+                scanBusy,
+                swingBusy
             });
         });
 
@@ -210,6 +216,15 @@ function start(): void {
         });
 
         app.get("/scan", async (_, res) => {
+            if (scanBusy) {
+                res.status(429).json({
+                    success: false,
+                    timestamp: new Date().toISOString(),
+                    error: "Scan already in progress — wait for it to finish (protects BDK KV rate limits)"
+                });
+                return;
+            }
+            scanBusy = true;
             try {
                 const list = watchlistStore.get();
                 const results = await scanner.scan(list);
@@ -258,10 +273,21 @@ function start(): void {
                     timestamp: new Date().toISOString(),
                     error: error instanceof Error ? error.message : "Scanner failed"
                 });
+            } finally {
+                scanBusy = false;
             }
         });
 
         app.get("/swing", async (_, res) => {
+            if (swingBusy) {
+                res.status(429).json({
+                    success: false,
+                    timestamp: new Date().toISOString(),
+                    error: "Swing scan already in progress — wait for it to finish"
+                });
+                return;
+            }
+            swingBusy = true;
             try {
                 const list = watchlistStore.get();
                 const results = await swingScanner.scan(list);
@@ -310,6 +336,8 @@ function start(): void {
                     timestamp: new Date().toISOString(),
                     error: error instanceof Error ? error.message : "Swing scanner failed"
                 });
+            } finally {
+                swingBusy = false;
             }
         });
 
@@ -328,11 +356,10 @@ function start(): void {
             }
         });
 
-        // Bind explicitly so Codespaces / proxy see the port
         const server: Server = app.listen(PORT, "0.0.0.0", () => {
             console.log("");
             console.log("====================================");
-            console.log("        SNIPER API v2.9");
+            console.log("        SNIPER API v2.10");
             console.log("====================================");
             console.log(`PID       : ${process.pid}`);
             console.log(`Listening : http://0.0.0.0:${PORT}`);
@@ -344,6 +371,7 @@ function start(): void {
             console.log(`Journal   : http://127.0.0.1:${PORT}/journal`);
             console.log(`Playbooks : ${PLAYBOOKS.length}`);
             console.log(`Journal   : ${journalStore.list().length} entries`);
+            console.log("BDK throttle: 400ms min gap · no overlapping scans");
             console.log("Ready for React UI — leave this terminal open");
             console.log("");
         });
