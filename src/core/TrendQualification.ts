@@ -2,13 +2,10 @@
  * Sniper
  * Trend Qualification Engine
  *
- * Version: 0.5
+ * Version: 0.6
  *
- * Trend + EMA + VWAP
- *
- * Never throws.
- * If insufficient candles exist, returns
- * a neutral trend instead.
+ * 1-minute sessions: allow trend with 25+ bars using available EMAs.
+ * Full stack (EMA50) when enough history; otherwise EMA9/20 + VWAP.
  */
 
 import { Candle } from "./BDKClient.js";
@@ -27,13 +24,11 @@ export type TrendDirection =
 
 export interface TrendChecks {
 
-    // Bullish
     priceAboveVWAP: boolean;
     priceAboveEMA9: boolean;
     ema9AboveEMA20: boolean;
     ema20AboveEMA50: boolean;
 
-    // Bearish
     priceBelowVWAP: boolean;
     priceBelowEMA9: boolean;
     ema9BelowEMA20: boolean;
@@ -61,16 +56,25 @@ export interface TrendResult {
 
 export class TrendQualification {
 
-private traceEngine =
-    new DecisionTraceEngine();
+    private traceEngine =
+        new DecisionTraceEngine();
 
     evaluate(
         candles: Candle[]
     ): TrendResult {
 
-        //--------------------------------------------------
-        // No candles
-        //--------------------------------------------------
+        const emptyChecks: TrendChecks = {
+
+            priceAboveVWAP: false,
+            priceAboveEMA9: false,
+            ema9AboveEMA20: false,
+            ema20AboveEMA50: false,
+            priceBelowVWAP: false,
+            priceBelowEMA9: false,
+            ema9BelowEMA20: false,
+            ema20BelowEMA50: false
+
+        };
 
         if (candles.length === 0) {
 
@@ -82,85 +86,39 @@ private traceEngine =
 
                 latestCandle: {
 
-                    open: 0,
-                    high: 0,
-                    low: 0,
-                    close: 0,
-                    volume: 0,
-                    datetime: 0
+                    open: 0, high: 0, low: 0, close: 0, volume: 0, datetime: 0
 
                 },
 
-                ema9: 0,
-                ema20: 0,
-                ema50: 0,
+                ema9: 0, ema20: 0, ema50: 0, vwap: 0,
 
-                vwap: 0,
-
-                checks: {
-
-                    priceAboveVWAP: false,
-                    priceAboveEMA9: false,
-                    ema9AboveEMA20: false,
-                    ema20AboveEMA50: false,
-
-                    priceBelowVWAP: false,
-                    priceBelowEMA9: false,
-                    ema9BelowEMA20: false,
-                    ema20BelowEMA50: false
-
-                }
+                checks: emptyChecks
 
             };
 
         }
 
-        //--------------------------------------------------
-        // Not enough history yet
-        //--------------------------------------------------
+        const latest =
+            candles[candles.length - 1];
 
-        if (candles.length < 50) {
-
-            const latest =
-                candles[candles.length - 1];
+        // Need enough for EMA20 + VWAP on 1m
+        if (candles.length < 25) {
 
             return {
 
                 direction: "NONE",
 
-                currentPrice:
-                    latest.close,
+                currentPrice: latest.close,
 
-                latestCandle:
-                    latest,
+                latestCandle: latest,
 
-                ema9: 0,
-                ema20: 0,
-                ema50: 0,
+                ema9: 0, ema20: 0, ema50: 0, vwap: 0,
 
-                vwap: 0,
-
-                checks: {
-
-                    priceAboveVWAP: false,
-                    priceAboveEMA9: false,
-                    ema9AboveEMA20: false,
-                    ema20AboveEMA50: false,
-
-                    priceBelowVWAP: false,
-                    priceBelowEMA9: false,
-                    ema9BelowEMA20: false,
-                    ema20BelowEMA50: false
-
-                }
+                checks: emptyChecks
 
             };
 
         }
-
-        //--------------------------------------------------
-        // Normal Calculation
-        //--------------------------------------------------
 
         const closes =
             candles.map(c => c.close);
@@ -172,74 +130,85 @@ private traceEngine =
             this.calculateEMA(closes, 20);
 
         const ema50 =
-            this.calculateEMA(closes, 50);
+            candles.length >= 50
+
+                ? this.calculateEMA(closes, 50)
+
+                : ema20;
 
         const vwap =
             this.calculateVWAP(candles);
 
-        const latestCandle =
-            candles[candles.length - 1];
-
         const currentPrice =
-            latestCandle.close;
+            latest.close;
 
         const checks: TrendChecks = {
 
-            // Bullish
+            priceAboveVWAP: currentPrice > vwap,
+            priceAboveEMA9: currentPrice > ema9,
+            ema9AboveEMA20: ema9 > ema20,
+            ema20AboveEMA50: ema20 >= ema50,
 
-            priceAboveVWAP:
-                currentPrice > vwap,
-
-            priceAboveEMA9:
-                currentPrice > ema9,
-
-            ema9AboveEMA20:
-                ema9 > ema20,
-
-            ema20AboveEMA50:
-                ema20 > ema50,
-
-            // Bearish
-
-            priceBelowVWAP:
-                currentPrice < vwap,
-
-            priceBelowEMA9:
-                currentPrice < ema9,
-
-            ema9BelowEMA20:
-                ema9 < ema20,
-
-            ema20BelowEMA50:
-                ema20 < ema50
+            priceBelowVWAP: currentPrice < vwap,
+            priceBelowEMA9: currentPrice < ema9,
+            ema9BelowEMA20: ema9 < ema20,
+            ema20BelowEMA50: ema20 <= ema50
 
         };
 
         let direction: TrendDirection =
             "NONE";
 
-        if (
+        // Full stack when EMA50 is real; else VWAP + EMA9/20
+        if (candles.length >= 50) {
 
-            checks.priceAboveVWAP &&
-            checks.priceAboveEMA9 &&
-            checks.ema9AboveEMA20 &&
-            checks.ema20AboveEMA50
+            if (
 
-        ) {
+                checks.priceAboveVWAP &&
+                checks.priceAboveEMA9 &&
+                checks.ema9AboveEMA20 &&
+                checks.ema20AboveEMA50
 
-            direction = "BULLISH";
+            ) {
 
-        }
-        else if (
+                direction = "BULLISH";
 
-            checks.priceBelowVWAP &&
-            checks.priceBelowEMA9 &&
-            checks.ema9BelowEMA20 &&
-            checks.ema20BelowEMA50
+            } else if (
 
-        ) {
+                checks.priceBelowVWAP &&
+                checks.priceBelowEMA9 &&
+                checks.ema9BelowEMA20 &&
+                checks.ema20BelowEMA50
 
-            direction = "BEARISH";
+            ) {
+
+                direction = "BEARISH";
+
+            }
+
+        } else {
+
+            if (
+
+                checks.priceAboveVWAP &&
+                checks.priceAboveEMA9 &&
+                checks.ema9AboveEMA20
+
+            ) {
+
+                direction = "BULLISH";
+
+            } else if (
+
+                checks.priceBelowVWAP &&
+                checks.priceBelowEMA9 &&
+                checks.ema9BelowEMA20
+
+            ) {
+
+                direction = "BEARISH";
+
+            }
 
         }
 
@@ -249,7 +218,7 @@ private traceEngine =
 
             currentPrice,
 
-            latestCandle,
+            latestCandle: latest,
 
             ema9,
 
@@ -266,52 +235,50 @@ private traceEngine =
     }
 
     trace(
-    result: TrendResult
-): DecisionStep[] {
+        result: TrendResult
+    ): DecisionStep[] {
 
-    this.traceEngine.reset();
+        this.traceEngine.reset();
 
-    this.traceEngine.add(
+        this.traceEngine.add(
 
-        "Trend",
+            "Trend",
 
-        result.direction !== "NONE",
+            result.direction !== "NONE",
 
-        result.direction,
+            result.direction,
 
-        result.direction === "NONE"
+            result.direction === "NONE"
 
-            ? "EMA stack not aligned"
+                ? "EMA/VWAP not aligned"
 
-            : `EMA9 ${result.ema9} | EMA20 ${result.ema20} | EMA50 ${result.ema50}`
+                : `EMA9 ${result.ema9} | EMA20 ${result.ema20} | EMA50 ${result.ema50}`
 
-    );
+        );
 
-    this.traceEngine.add(
+        this.traceEngine.add(
 
-    "VWAP",
+            "VWAP",
 
-    true,
+            true,
 
-    `${result.vwap.toFixed(2)}`,
+            `${result.vwap.toFixed(2)}`,
 
-    result.checks.priceAboveVWAP
+            result.checks.priceAboveVWAP
 
-        ? "Price above VWAP"
+                ? "Price above VWAP"
 
-        : result.checks.priceBelowVWAP
+                : result.checks.priceBelowVWAP
 
-            ? "Price below VWAP"
+                    ? "Price below VWAP"
 
-            : "Price at VWAP"
+                    : "Price at VWAP"
 
-);
+        );
 
-    return this.traceEngine
-        .build()
-        .steps;
+        return this.traceEngine.build().steps;
 
-}
+    }
 
     private calculateEMA(
         values: number[],
@@ -332,9 +299,7 @@ private traceEngine =
 
         }
 
-        return Number(
-            ema.toFixed(2)
-        );
+        return Number(ema.toFixed(2));
 
     }
 
@@ -349,30 +314,20 @@ private traceEngine =
         for (const candle of candles) {
 
             const typicalPrice =
-
-                (
-                    candle.high +
-                    candle.low +
-                    candle.close
-                ) / 3;
+                (candle.high + candle.low + candle.close) / 3;
 
             cumulativePV +=
-
-                typicalPrice *
-                candle.volume;
+                typicalPrice * candle.volume;
 
             cumulativeVolume +=
                 candle.volume;
 
         }
 
+        if (cumulativeVolume <= 0) return 0;
+
         return Number(
-
-            (
-                cumulativePV /
-                cumulativeVolume
-            ).toFixed(2)
-
+            (cumulativePV / cumulativeVolume).toFixed(2)
         );
 
     }

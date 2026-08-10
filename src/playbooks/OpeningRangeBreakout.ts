@@ -2,10 +2,10 @@
  * Sniper
  * Opening Range Breakout Playbook
  *
- * Version: 3.1
+ * Version: 3.2
  *
- * Decision Trace architecture.
- * Target now uses measured move of Opening Range height.
+ * Structure-first: 30m OR break + valid R:R is enough.
+ * Candle patterns boost score but are not required (rare on 1m).
  */
 
 import { Candle } from "../core/BDKClient.js";
@@ -70,27 +70,18 @@ implements Playbook<OpeningRangeBreakoutResult> {
 
                 candles,
 
-                openingRange.breakoutIndex
+                openingRange.breakoutIndex >= 0
+
+                    ? openingRange.breakoutIndex
+
+                    : 0
 
             );
 
         let trade =
-            this.risk.evaluateTrade(
+            this.risk.evaluateTrade(0, 0, 0);
 
-                0,
-
-                0,
-
-                0
-
-            );
-
-        if (
-
-            openingRange.direction !== "NONE" &&
-            confirmation.confirmed
-
-        ) {
+        if (openingRange.direction !== "NONE" && openingRange.breakoutIndex >= 0) {
 
             const entry =
                 openingRange.breakoutPrice;
@@ -103,7 +94,6 @@ implements Playbook<OpeningRangeBreakoutResult> {
 
                     : openingRange.high;
 
-            // Measured Move = height of the Opening Range
             const rangeHeight =
                 openingRange.high - openingRange.low;
 
@@ -128,6 +118,14 @@ implements Playbook<OpeningRangeBreakoutResult> {
 
         }
 
+        const structureOk =
+            openingRange.direction !== "NONE" &&
+            trade.valid;
+
+        const qualified =
+            structureOk &&
+            (confirmation.confirmed || trade.riskReward >= 1.5);
+
         const score =
             this.score.evaluate({
 
@@ -136,7 +134,15 @@ implements Playbook<OpeningRangeBreakoutResult> {
                 playbook: 25,
 
                 confirmation:
-                    confirmation.score,
+                    confirmation.confirmed
+
+                        ? confirmation.score
+
+                        : structureOk
+
+                            ? 12
+
+                            : 0,
 
                 risk:
                     this.score.evaluateRisk(
@@ -144,13 +150,15 @@ implements Playbook<OpeningRangeBreakoutResult> {
                     ),
 
                 entry:
-                    confirmation.confirmed
+                    openingRange.breakoutIndex >= 0
 
                         ? this.score.evaluateEntry(
 
-                            candles.length - 1 -
-
-                            confirmation.candleIndex
+                            Math.max(
+                                0,
+                                candles.length - 1 -
+                                openingRange.breakoutIndex
+                            )
 
                         )
 
@@ -163,9 +171,7 @@ implements Playbook<OpeningRangeBreakoutResult> {
             playbook:
                 "Opening Range Breakout",
 
-            qualified:
-                trade.valid &&
-                confirmation.confirmed,
+            qualified,
 
             openingRange,
 
@@ -202,10 +208,12 @@ implements Playbook<OpeningRangeBreakoutResult> {
         const last =
             candles[candles.length - 1];
 
+        // Only kill if clearly past stop (full OR opposite side),
+        // not a mild pullback into the range
         if (
 
             result.openingRange.direction === "BULLISH" &&
-            last.close < result.openingRange.high
+            last.close < result.openingRange.low
 
         ) {
 
@@ -213,8 +221,7 @@ implements Playbook<OpeningRangeBreakoutResult> {
 
                 active: false,
 
-                reason:
-                    "Returned Inside Opening Range"
+                reason: "Broke OR low (stop side)"
 
             };
 
@@ -223,7 +230,7 @@ implements Playbook<OpeningRangeBreakoutResult> {
         if (
 
             result.openingRange.direction === "BEARISH" &&
-            last.close > result.openingRange.low
+            last.close > result.openingRange.high
 
         ) {
 
@@ -231,8 +238,7 @@ implements Playbook<OpeningRangeBreakoutResult> {
 
                 active: false,
 
-                reason:
-                    "Returned Inside Opening Range"
+                reason: "Broke OR high (stop side)"
 
             };
 
@@ -248,47 +254,23 @@ implements Playbook<OpeningRangeBreakoutResult> {
 
     }
 
-        //--------------------------------------------------
-    // Decision Trace
-    //--------------------------------------------------
-
     trace(
         result: OpeningRangeBreakoutResult
     ): DecisionTrace {
 
         this.traceEngine.reset();
 
-        //--------------------------------------------------
-        // Merge Engine Traces
-        //--------------------------------------------------
-
         this.traceEngine.addSteps(
-
-            this.openingRange.trace(
-                result.openingRange
-            )
-
+            this.openingRange.trace(result.openingRange)
         );
 
         this.traceEngine.addSteps(
-
-            this.confirmation.trace(
-                result.confirmation
-            )
-
+            this.confirmation.trace(result.confirmation)
         );
 
         this.traceEngine.addSteps(
-
-            this.risk.trace(
-                result.trade
-            )
-
+            this.risk.trace(result.trade)
         );
-
-        //--------------------------------------------------
-        // Overall Score
-        //--------------------------------------------------
 
         this.traceEngine.addInfo(
 
@@ -304,10 +286,6 @@ implements Playbook<OpeningRangeBreakoutResult> {
 
         );
 
-        //--------------------------------------------------
-        // Playbook
-        //--------------------------------------------------
-
         this.traceEngine.addInfo(
 
             "Playbook",
@@ -316,15 +294,11 @@ implements Playbook<OpeningRangeBreakoutResult> {
 
             result.qualified
 
-                ? "Opening Range Breakout confirmed"
+                ? "Opening Range Breakout"
 
                 : "Requirements not fully met"
 
         );
-
-        //--------------------------------------------------
-        // Final Trace
-        //--------------------------------------------------
 
         return this.traceEngine.build();
 

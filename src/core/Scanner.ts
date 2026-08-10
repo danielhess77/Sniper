@@ -2,10 +2,10 @@
  * Sniper
  * Scanner
  *
- * Version: 2.10
+ * Version: 2.11
  *
- * Evaluate playbooks on today's ET bars only (plus a short prior-day
- * tail for gap/drive context). Session gate still requires trigger today.
+ * validate() is informational — does not hide a same-day qualified setup.
+ * (Previously midday "lost structure" wiped the whole board.)
  */
 
 import { BDKClient, Candle } from "./BDKClient.js";
@@ -26,12 +26,10 @@ function candlesForIntradayEval(candles: Candle[]): Candle[] {
 
     if (todayBars.length >= 20) {
 
-        // Enough of today — use today only so OR/VWAP/drive aren't multi-day
         return todayBars;
 
     }
 
-    // Early session: keep a short prior-day tail for gap context
     const sorted = [...candles].sort(
 
         (a, b) => Number(a.datetime) - Number(b.datetime)
@@ -77,7 +75,7 @@ export class Scanner {
         console.log("");
         console.log("========================================");
         console.log(`Scanning ${symbols.length} symbols (throttled)...`);
-        console.log(`Session: ${todayEt} ET — OR/eval scoped to today`);
+        console.log(`Session: ${todayEt} ET — structure-first qualify`);
         console.log("========================================");
 
         const histories: { symbol: string; candles: Candle[] }[] = [];
@@ -149,22 +147,38 @@ export class Scanner {
 
                     }
 
-                    const validation =
-                        playbook.validate(evalCandles, result);
+                    if (!result.qualified) {
 
-                    console.log("");
+                        console.log("FINAL: not qualified by playbook");
 
-                    if (validation.active) {
-
-                        console.log("FINAL: PASS (playbook)");
-
-                    } else {
-
-                        console.log(`FINAL: FAIL (${validation.reason})`);
+                        continue;
 
                     }
 
+                    const validation =
+                        playbook.validate(evalCandles, result);
+
                     if (!validation.active) {
+
+                        console.log(`VALIDATE soft-fail: ${validation.reason} (still listing if today)`);
+
+                    } else {
+
+                        console.log("FINAL: PASS");
+
+                    }
+
+                    // Hard reject only when stop-side structure is clearly broken
+                    if (
+
+                        !validation.active &&
+                        /stop|broke or low|broke or high|re-broke/i.test(
+                            validation.reason
+                        )
+
+                    ) {
+
+                        console.log("FINAL: hard-fail validate — skip");
 
                         continue;
 
@@ -240,7 +254,7 @@ export class Scanner {
 
         console.log("");
         console.log("========================================");
-        console.log(`Qualified Setups (today ET only): ${results.length}`);
+        console.log(`Qualified Setups (today ET): ${results.length}`);
         console.log("========================================");
 
         return results;
