@@ -24,7 +24,6 @@ export interface ScanCard {
     symbol: string;
     playbook: string;
     triggerTime: string;
-    /** ISO when structure became valid */
     qualifiedAt?: string | null;
     qualified: boolean;
     score: number;
@@ -62,7 +61,6 @@ export interface SwingCard {
     rs: number;
     reason: string;
     setupType?: "PULLBACK" | "TIGHT_BASE" | string;
-    /** Display date of trigger bar */
     triggerTime?: string;
     qualifiedAt?: string | null;
     option?: OptionSuggestion | null;
@@ -159,64 +157,81 @@ export interface JournalResponse {
 
 const API = "/api";
 
+async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+    let response: Response;
+    try {
+        response = await fetch(`${API}${path}`, init);
+    } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        throw new Error(`Network error calling ${path}: ${msg}`);
+    }
+
+    const text = await response.text();
+    let data: unknown = null;
+    try {
+        data = text ? JSON.parse(text) : null;
+    } catch {
+        // non-JSON body
+    }
+
+    if (!response.ok) {
+        const fromJson =
+            data && typeof data === "object" && data !== null && "error" in data
+                ? String((data as { error: unknown }).error)
+                : null;
+        const snippet = text.slice(0, 180).replace(/\s+/g, " ");
+        throw new Error(
+            fromJson ||
+            `API ${path} → HTTP ${response.status}${snippet ? `: ${snippet}` : ""}`
+        );
+    }
+
+    return data as T;
+}
+
+export async function getHealth(): Promise<{ success: boolean; status?: string; pid?: number }> {
+    return apiFetch("/health");
+}
+
 export async function getScan(): Promise<ScanResponse> {
-    const response = await fetch(`${API}/scan`);
-    if (!response.ok) throw new Error("Unable to reach Sniper API");
-    return response.json();
+    return apiFetch("/scan");
 }
 
 export async function getSwing(): Promise<SwingResponse> {
-    const response = await fetch(`${API}/swing`);
-    if (!response.ok) throw new Error("Unable to reach Swing endpoint");
-    return response.json();
+    return apiFetch("/swing");
 }
 
 export async function getRvol(): Promise<RvolResponse> {
-    const response = await fetch(`${API}/rvol`);
-    if (!response.ok) throw new Error("Unable to reach RVOL endpoint");
-    return response.json();
+    return apiFetch("/rvol");
 }
 
 export async function getWatchlist(): Promise<WatchlistResponse> {
-    const response = await fetch(`${API}/watchlist`);
-    if (!response.ok) throw new Error("Unable to reach Watchlist endpoint");
-    return response.json();
+    return apiFetch("/watchlist");
 }
 
 export async function putWatchlist(symbols: string[]): Promise<WatchlistResponse> {
-    const response = await fetch(`${API}/watchlist`, {
+    return apiFetch("/watchlist", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ symbols })
     });
-    const data = await response.json() as WatchlistResponse;
-    if (!response.ok) throw new Error(data.error || "Failed to save watchlist");
-    return data;
 }
 
 export async function getJournal(): Promise<JournalResponse> {
-    const response = await fetch(`${API}/journal`);
-    if (!response.ok) throw new Error("Unable to reach Journal endpoint");
-    return response.json();
+    return apiFetch("/journal");
 }
 
 export async function patchJournal(
     id: string,
     body: { taken?: TakenStatus; notes?: string }
 ): Promise<JournalResponse & { entry: JournalEntry }> {
-    const response = await fetch(`${API}/journal/${id}`, {
+    return apiFetch(`/journal/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body)
     });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || "Journal update failed");
-    return data;
 }
 
 export async function resolveJournal(): Promise<JournalResponse & { checked: number; resolved: number }> {
-    const response = await fetch(`${API}/journal/resolve`, { method: "POST" });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || "Resolve failed");
-    return data;
+    return apiFetch("/journal/resolve", { method: "POST" });
 }

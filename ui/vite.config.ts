@@ -18,6 +18,9 @@ export default defineConfig({
 
         strictPort: true,
 
+        // Allow Codespaces forwarded hostnames
+        allowedHosts: true,
+
         // Browser calls /api/* → Vite forwards to the Sniper Express API
         proxy: {
 
@@ -29,9 +32,38 @@ export default defineConfig({
 
                 secure: false,
 
+                // Keep long scan/swing requests alive
+                timeout: 300_000,
+
+                proxyTimeout: 300_000,
+
                 rewrite: (path) =>
 
-                    path.replace(/^\/api/, "")
+                    path.replace(/^\/api/, ""),
+
+                configure: (proxy) => {
+
+                    proxy.on("error", (err, _req, res) => {
+
+                        console.error("[vite proxy]", err.message);
+
+                        if (res && !res.headersSent) {
+
+                            res.writeHead(502, { "Content-Type": "application/json" });
+
+                            res.end(JSON.stringify({
+
+                                success: false,
+
+                                error: `Proxy to API failed: ${err.message}. Is npx tsx src/server/Server.ts running?`
+
+                            }));
+
+                        }
+
+                    });
+
+                }
 
             }
 
