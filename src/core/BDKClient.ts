@@ -2,7 +2,11 @@
  * Sniper
  * Broker Development Kit Client
  *
- * Version: 1.0
+ * Version: 1.1
+ *
+ * getHistory uses period-based params (not start/end wall-clock).
+ * start.setHours(4,0,0,0) on a UTC Codespace made endDate < startDate
+ * before ~4:00 UTC → Schwab 400 "Enddate is before startDate".
  */
 
 export interface Candle {
@@ -92,6 +96,10 @@ export class BDKClient {
     private readonly baseUrl =
         "https://bdk.daniel-hess7.workers.dev";
 
+    /**
+     * Intraday / recent minute bars for playbook engines.
+     * Uses period (not startDate/endDate) so Schwab never sees inverted range.
+     */
     async getHistory(
 
         symbol: string,
@@ -107,19 +115,12 @@ export class BDKClient {
         const url =
             new URL("/history", this.baseUrl);
 
-        const now = new Date();
-
-        const start = new Date(now);
-
-        start.setHours(4, 0, 0, 0);
-
         url.searchParams.set("symbol", symbol);
 
-        url.searchParams.set("startDate", start.getTime().toString());
-
-        url.searchParams.set("endDate", now.getTime().toString());
-
+        // 2 sessions of 1-min bars is enough for OR / drive / VWAP playbooks
         url.searchParams.set("periodType", "day");
+
+        url.searchParams.set("period", "2");
 
         url.searchParams.set("frequencyType", frequencyType);
 
