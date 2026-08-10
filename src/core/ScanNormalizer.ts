@@ -1,12 +1,14 @@
 /**
  * ScanNormalizer
  *
- * Converts every playbook's unique output
- * into one common ScanCard object.
+ * Converts every playbook's unique output into one common ScanCard.
+ * Intraday: trigger must be on today's America/New_York calendar day
+ * or the card is forced unqualified (prior-session noise filtered).
  */
 
 import { Candle } from "./BDKClient.js";
 import type { ScanCard } from "../types.js";
+import { isTodayEt } from "./SessionDay.js";
 
 function formatEtTime(ms: number): string {
 
@@ -108,9 +110,18 @@ export function normalizeScan(
 
             : "--";
 
+    const onTodaySession =
+
+        Number.isFinite(signalMs) && isTodayEt(signalMs);
+
+    // Playbook may say qualified; prior-session triggers are not "live" for 0DTE
+    const qualified =
+
+        Boolean(result.qualified) && onTodaySession;
+
     const qualifiedAt =
 
-        result.qualified && Number.isFinite(signalMs)
+        qualified && Number.isFinite(signalMs)
 
             ? toIso(signalMs)
 
@@ -127,8 +138,7 @@ export function normalizeScan(
 
         qualifiedAt,
 
-        qualified:
-            result.qualified,
+        qualified,
 
         score:
             result.score ?? 0,

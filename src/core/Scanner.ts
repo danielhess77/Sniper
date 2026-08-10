@@ -2,10 +2,9 @@
  * Sniper
  * Scanner
  *
- * Version: 2.8
+ * Version: 2.9
  *
- * Sequential history fetches (BDK throttle handles gap).
- * One failure does not abort the scan.
+ * Sequential history + today-ET session gate on qualified cards.
  */
 
 import { BDKClient, Candle } from "./BDKClient.js";
@@ -13,6 +12,7 @@ import { Playbook } from "../playbooks/Playbook.js";
 import type { ScanCard } from "../types.js";
 import { normalizeScan } from "./ScanNormalizer.js";
 import { OptionSelectEngine } from "../engines/OptionSelectEngine.js";
+import { etCalendarDay } from "./SessionDay.js";
 
 export type ScanResult = ScanCard;
 
@@ -36,15 +36,16 @@ export class Scanner {
         symbols: string[]
     ): Promise<ScanResult[]> {
 
+        const todayEt = etCalendarDay();
+
         console.log("");
         console.log("========================================");
         console.log(`Scanning ${symbols.length} symbols (throttled)...`);
+        console.log(`Session gate: only qualify triggers on ${todayEt} ET`);
         console.log("========================================");
 
         const histories: { symbol: string; candles: Candle[] }[] = [];
 
-        // Sequential — bdkThrottle still serializes, but this avoids
-        // queueing 35 refreshes at once when the scan starts
         for (const symbol of symbols) {
 
             try {
@@ -116,7 +117,7 @@ export class Scanner {
 
                     if (validation.active) {
 
-                        console.log("FINAL: PASS");
+                        console.log("FINAL: PASS (playbook)");
 
                     } else {
 
@@ -130,8 +131,7 @@ export class Scanner {
 
                     }
 
-                    results.push(
-
+                    const card =
                         normalizeScan(
 
                             history.symbol,
@@ -140,9 +140,19 @@ export class Scanner {
 
                             history.candles
 
-                        )
+                        );
 
-                    );
+                    // Drop prior-session hits from the result list entirely
+                    // (UI is qualified-only; avoids score clutter)
+                    if (!card.qualified) {
+
+                        console.log("SESSION GATE: skip (not today ET)");
+
+                        continue;
+
+                    }
+
+                    results.push(card);
 
                 } catch (error) {
 
@@ -193,7 +203,7 @@ export class Scanner {
 
         console.log("");
         console.log("========================================");
-        console.log(`Qualified Setups: ${results.length}`);
+        console.log(`Qualified Setups (today ET only): ${results.length}`);
         console.log("========================================");
 
         return results;
