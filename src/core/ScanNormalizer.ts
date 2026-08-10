@@ -1,14 +1,14 @@
 /**
  * ScanNormalizer
  *
- * Converts every playbook's unique output into one common ScanCard.
- * Intraday: trigger must be on today's America/New_York calendar day
- * or the card is forced unqualified (prior-session noise filtered).
+ * Session gate: prefer signal bar on today ET.
+ * Fallback: if eval series last bar is today (Scanner already scoped),
+ * accept playbook.qualified — avoids false zero from bad/missing signal index.
  */
 
 import { Candle } from "./BDKClient.js";
 import type { ScanCard } from "../types.js";
-import { isTodayEt } from "./SessionDay.js";
+import { isTodayEt, etCalendarDay } from "./SessionDay.js";
 
 function formatEtTime(ms: number): string {
 
@@ -54,7 +54,7 @@ export function normalizeScan(
 
         "NONE";
 
-    const signalIndex =
+    let signalIndex =
 
         result.drive?.confirmIndex >= 0
 
@@ -86,11 +86,26 @@ export function normalizeScan(
 
                                     : -1;
 
+    // Clamp OOB indices (Opening Drive previously used 405 on shorter series)
+    if (signalIndex >= candles.length) {
+
+        signalIndex = candles.length - 1;
+
+    }
+
     const signalCandle =
 
-        signalIndex >= 0
+        signalIndex >= 0 && signalIndex < candles.length
 
             ? candles[signalIndex]
+
+            : undefined;
+
+    const lastCandle =
+
+        candles.length > 0
+
+            ? candles[candles.length - 1]
 
             : undefined;
 
@@ -102,30 +117,75 @@ export function normalizeScan(
 
             : NaN;
 
+    const lastMs =
+
+        lastCandle
+
+            ? Number(lastCandle.datetime)
+
+            : NaN;
+
     const triggerTime =
 
         Number.isFinite(signalMs)
 
             ? formatEtTime(signalMs)
 
-            : "--";
+            : Number.isFinite(lastMs)
 
-    const onTodaySession =
+                ? formatEtTime(lastMs)
+
+                : "--";
+
+    const signalToday =
 
         Number.isFinite(signalMs) && isTodayEt(signalMs);
 
-    // Playbook may say qualified; prior-session triggers are not "live" for 0DTE
+    const seriesToday =
+
+        Number.isFinite(lastMs) && isTodayEt(lastMs);
+
+    // Scanner feeds today-scoped bars; if series is today, trust playbook qualify
+    const onTodaySession =
+
+        signalToday || seriesToday;
+
     const qualified =
 
-        Boolean(result.qualified) && onTodaySession;
+        Boolean(result.qualified) &&
+        Boolean(trade?.valid) &&
+        onTodaySession &&
+        (trade?.entry ?? 0) > 0;
+
+    const qualifiedAtMs =
+
+        Number.isFinite(signalMs) ? signalMs : lastMs;
 
     const qualifiedAt =
 
-        qualified && Number.isFinite(signalMs)
+        qualified && Number.isFinite(qualifiedAtMs)
 
-            ? toIso(signalMs)
+            ? toIso(qualifiedAtMs)
 
             : null;
+
+    if (result.qualified && !qualified) {
+
+        console.log(
+
+            `[normalize] ${symbol} ${result.playbook}: playbook=yes but card=no ` +
+
+            `(signalToday=${signalToday} seriesToday=${seriesToday} ` +
+
+            `tradeValid=${Boolean(trade?.valid)} entry=${trade?.entry ?? 0} ` +
+
+            `signalIdx=${signalIndex}/${candles.length} ` +
+
+            `day=${Number.isFinite(signalMs) ? etCalendarDay(signalMs) : "?"})`
+
+        );
+
+    }
 
     return {
 

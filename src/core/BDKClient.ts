@@ -2,7 +2,7 @@
  * Sniper
  * Broker Development Kit Client
  *
- * Version: 1.3 — all HTTP calls go through bdkThrottle
+ * Version: 1.4 — normalize candle datetime (sec → ms)
  */
 
 import { bdkThrottle } from "./BDKRateLimit.js";
@@ -86,6 +86,38 @@ export interface OptionChainResult {
     callExpDateMap: Record<string, Record<string, OptionContract[]>>;
 
     putExpDateMap: Record<string, Record<string, OptionContract[]>>;
+
+}
+
+/** Schwab sometimes returns epoch seconds; session math needs ms. */
+function normalizeDatetime(dt: number): number {
+
+    if (!Number.isFinite(dt) || dt <= 0) return dt;
+
+    // ms timestamps are ~1.6e12+; seconds are ~1.6e9
+    if (dt < 1e12) return Math.round(dt * 1000);
+
+    return dt;
+
+}
+
+function normalizeCandles(raw: any[]): Candle[] {
+
+    return (raw ?? []).map((c: any) => ({
+
+        open: Number(c.open),
+
+        high: Number(c.high),
+
+        low: Number(c.low),
+
+        close: Number(c.close),
+
+        volume: Number(c.volume ?? 0),
+
+        datetime: normalizeDatetime(Number(c.datetime))
+
+    }));
 
 }
 
@@ -361,7 +393,7 @@ export class BDKClient {
 
                 const data = JSON.parse(body);
 
-                return data.candles ?? [];
+                return normalizeCandles(data.candles ?? []);
 
             } catch {
 
