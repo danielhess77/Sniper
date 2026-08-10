@@ -2,8 +2,10 @@
  * Sniper
  * Broker Development Kit Client
  *
- * Version: 1.2
+ * Version: 1.3 — all HTTP calls go through bdkThrottle
  */
+
+import { bdkThrottle } from "./BDKRateLimit.js";
 
 export interface Candle {
 
@@ -92,9 +94,6 @@ export class BDKClient {
     private readonly baseUrl =
         "https://bdk.daniel-hess7.workers.dev";
 
-    /**
-     * Intraday minute bars — period-based (no startDate/endDate).
-     */
     async getHistory(
 
         symbol: string,
@@ -196,61 +195,65 @@ export class BDKClient {
 
         if (symbols.length === 0) return [];
 
-        const url =
-            new URL("/quotes", this.baseUrl);
+        return bdkThrottle(async () => {
 
-        url.searchParams.set("symbols", symbols.join(","));
+            const url =
+                new URL("/quotes", this.baseUrl);
 
-        console.log("");
-        console.log("=== BDK Quotes ===");
-        console.log(url.toString());
-        console.log("==================");
+            url.searchParams.set("symbols", symbols.join(","));
 
-        const response = await fetch(url);
+            console.log("");
+            console.log("=== BDK Quotes ===");
+            console.log(url.toString());
+            console.log("==================");
 
-        if (!response.ok) {
+            const response = await fetch(url);
 
-            const body = await response.text();
+            if (!response.ok) {
 
-            console.error("BDK Quotes Response:");
-            console.error(body);
+                const body = await response.text();
 
-            throw new Error(`BDK quotes failed (${response.status})`);
+                console.error("BDK Quotes Response:");
+                console.error(body);
 
-        }
+                throw new Error(`BDK quotes failed (${response.status})`);
 
-        const data =
-            await response.json() as Record<string, any>;
+            }
 
-        const snapshots: QuoteSnapshot[] = [];
+            const data =
+                await response.json() as Record<string, any>;
 
-        for (const symbol of symbols) {
+            const snapshots: QuoteSnapshot[] = [];
 
-            const row = data[symbol];
+            for (const symbol of symbols) {
 
-            if (!row) continue;
+                const row = data[symbol];
 
-            const quote = row.quote ?? {};
+                if (!row) continue;
 
-            const fundamental = row.fundamental ?? {};
+                const quote = row.quote ?? {};
 
-            snapshots.push({
+                const fundamental = row.fundamental ?? {};
 
-                symbol,
+                snapshots.push({
 
-                lastPrice: Number(quote.lastPrice ?? quote.mark ?? 0),
+                    symbol,
 
-                totalVolume: Number(quote.totalVolume ?? 0),
+                    lastPrice: Number(quote.lastPrice ?? quote.mark ?? 0),
 
-                avg10DaysVolume: Number(fundamental.avg10DaysVolume ?? 0),
+                    totalVolume: Number(quote.totalVolume ?? 0),
 
-                netPercentChange: Number(quote.netPercentChange ?? 0)
+                    avg10DaysVolume: Number(fundamental.avg10DaysVolume ?? 0),
 
-            });
+                    netPercentChange: Number(quote.netPercentChange ?? 0)
 
-        }
+                });
 
-        return snapshots;
+            }
+
+            return snapshots;
+
+        });
 
     }
 
@@ -260,44 +263,48 @@ export class BDKClient {
 
     ): Promise<OptionChainResult> {
 
-        const url =
-            new URL("/options", this.baseUrl);
+        return bdkThrottle(async () => {
 
-        url.searchParams.set("symbol", symbol);
+            const url =
+                new URL("/options", this.baseUrl);
 
-        console.log("");
-        console.log("=== BDK Options ===");
-        console.log(url.toString());
-        console.log("===================");
+            url.searchParams.set("symbol", symbol);
 
-        const response = await fetch(url);
+            console.log("");
+            console.log("=== BDK Options ===");
+            console.log(url.toString());
+            console.log("===================");
 
-        if (!response.ok) {
+            const response = await fetch(url);
 
-            const body = await response.text();
+            if (!response.ok) {
 
-            console.error("BDK Options Response:");
-            console.error(body);
+                const body = await response.text();
 
-            throw new Error(
-                `BDK options failed (${response.status}): ${body.slice(0, 200)}`
-            );
+                console.error("BDK Options Response:");
+                console.error(body);
 
-        }
+                throw new Error(
+                    `BDK options failed (${response.status}): ${body.slice(0, 200)}`
+                );
 
-        const data = await response.json() as any;
+            }
 
-        return {
+            const data = await response.json() as any;
 
-            symbol: data.symbol ?? symbol,
+            return {
 
-            underlyingPrice: Number(data.underlyingPrice ?? 0),
+                symbol: data.symbol ?? symbol,
 
-            callExpDateMap: data.callExpDateMap ?? {},
+                underlyingPrice: Number(data.underlyingPrice ?? 0),
 
-            putExpDateMap: data.putExpDateMap ?? {}
+                callExpDateMap: data.callExpDateMap ?? {},
 
-        };
+                putExpDateMap: data.putExpDateMap ?? {}
+
+            };
+
+        });
 
     }
 
@@ -307,59 +314,62 @@ export class BDKClient {
 
     ): Promise<Candle[]> {
 
-        console.log("");
-        console.log("=== BDK Request ===");
-        console.log(url.toString());
-        console.log("===================");
+        return bdkThrottle(async () => {
 
-        const response = await fetch(url);
+            console.log("");
+            console.log("=== BDK Request ===");
+            console.log(url.toString());
+            console.log("===================");
 
-        const body = await response.text();
+            const response = await fetch(url);
 
-        if (!response.ok) {
+            const body = await response.text();
 
-            // Prefer Schwab JSON error detail over Cloudflare HTML wall
-            let detail = body.slice(0, 240).replace(/\s+/g, " ");
+            if (!response.ok) {
 
-            if (body.trimStart().startsWith("<!DOCTYPE") || body.includes("cf-error")) {
+                let detail = body.slice(0, 240).replace(/\s+/g, " ");
 
-                detail = "Cloudflare worker exception (HTML 5xx) — check BDK auth / worker logs";
+                if (body.trimStart().startsWith("<!DOCTYPE") || body.includes("cf-error")) {
 
-            } else {
+                    detail = "Cloudflare worker exception (HTML 5xx) — often KV 429 on token refresh; slow down scans";
 
-                try {
+                } else {
 
-                    const j = JSON.parse(body);
+                    try {
 
-                    if (j?.errors?.[0]?.detail) detail = j.errors[0].detail;
+                        const j = JSON.parse(body);
 
-                    else if (j?.error) detail = String(j.error);
+                        if (j?.errors?.[0]?.detail) detail = j.errors[0].detail;
 
-                } catch {
+                        else if (j?.error) detail = String(j.error);
 
-                    // keep snippet
+                    } catch {
+
+                        // keep snippet
+
+                    }
 
                 }
 
+                console.error("BDK Response:", detail);
+
+                throw new Error(`BDK request failed (${response.status}): ${detail}`);
+
             }
 
-            console.error("BDK Response:", detail);
+            try {
 
-            throw new Error(`BDK request failed (${response.status}): ${detail}`);
+                const data = JSON.parse(body);
 
-        }
+                return data.candles ?? [];
 
-        try {
+            } catch {
 
-            const data = JSON.parse(body);
+                throw new Error("BDK returned non-JSON body for history");
 
-            return data.candles ?? [];
+            }
 
-        } catch {
-
-            throw new Error("BDK returned non-JSON body for history");
-
-        }
+        });
 
     }
 

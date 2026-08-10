@@ -2,9 +2,10 @@
  * Sniper
  * Scanner
  *
- * Version: 2.7
+ * Version: 2.8
  *
- * Per-symbol history fetch — one BDK failure no longer aborts the whole scan.
+ * Sequential history fetches (BDK throttle handles gap).
+ * One failure does not abort the scan.
  */
 
 import { BDKClient, Candle } from "./BDKClient.js";
@@ -37,46 +38,28 @@ export class Scanner {
 
         console.log("");
         console.log("========================================");
-        console.log(`Scanning ${symbols.length} symbols...`);
+        console.log(`Scanning ${symbols.length} symbols (throttled)...`);
         console.log("========================================");
 
         const histories: { symbol: string; candles: Candle[] }[] = [];
-        const batchSize = 4;
 
-        for (let i = 0; i < symbols.length; i += batchSize) {
+        // Sequential — bdkThrottle still serializes, but this avoids
+        // queueing 35 refreshes at once when the scan starts
+        for (const symbol of symbols) {
 
-            const batch = symbols.slice(i, i + batchSize);
+            try {
 
-            const part = await Promise.all(
+                const candles = await this.bdk.getHistory(symbol);
 
-                batch.map(async symbol => {
+                histories.push({ symbol, candles });
 
-                    try {
+            } catch (err) {
 
-                        const candles = await this.bdk.getHistory(symbol);
+                const msg = err instanceof Error ? err.message : String(err);
 
-                        return { symbol, candles };
+                console.error(`History failed: ${symbol} — ${msg.slice(0, 140)}`);
 
-                    } catch (err) {
-
-                        const msg = err instanceof Error ? err.message : String(err);
-
-                        console.error(`History failed: ${symbol} — ${msg.slice(0, 120)}`);
-
-                        return { symbol, candles: [] as Candle[] };
-
-                    }
-
-                })
-
-            );
-
-            histories.push(...part);
-
-            // light pacing so BDK worker is less likely to 500 the batch
-            if (i + batchSize < symbols.length) {
-
-                await new Promise(r => setTimeout(r, 150));
+                histories.push({ symbol, candles: [] });
 
             }
 
