@@ -2,15 +2,17 @@
  * Sniper
  * Swing Scanner
  *
- * Version: 1.3
+ * Version: 1.4
  *
- * Adds qualifiedAt from the daily trigger bar.
+ * SHORT (1–3 day) horizon: daily structure + 30m entry confirm.
+ * INTERMEDIATE (1–3 week): daily only.
  */
 
 import { BDKClient, Candle } from "./BDKClient.js";
 import { SWING_HORIZONS } from "../config/SwingHorizons.js";
 import { RelativeStrengthEngine } from "../engines/RelativeStrengthEngine.js";
 import { OptionSelectEngine } from "../engines/OptionSelectEngine.js";
+import { Swing30mConfirmEngine } from "../engines/Swing30mConfirmEngine.js";
 import { SwingPlaybook, SwingResult } from "../playbooks/SwingPlaybook.js";
 import { SwingTightBasePlaybook, SwingTightBaseResult } from "../playbooks/SwingTightBasePlaybook.js";
 import type { OptionSuggestion } from "../types.js";
@@ -52,6 +54,13 @@ export interface SwingCard {
 
     /** ISO of trigger daily bar (when setup became valid) */
     qualifiedAt: string | null;
+
+    /** 30m confirm — SHORT only */
+    confirmTf: "30m" | null;
+
+    confirmStatus: "confirmed" | "pending" | "n/a";
+
+    confirmReason: string;
 
     option?: OptionSuggestion | null;
 
@@ -115,6 +124,9 @@ export class SwingScanner {
 
     private tightBasePlaybook =
         new SwingTightBasePlaybook();
+
+    private confirm30 =
+        new Swing30mConfirmEngine();
 
     private optionSelect: OptionSelectEngine;
 
@@ -272,6 +284,124 @@ export class SwingScanner {
 
         }
 
+        // 30m confirm only for SHORT names that daily structure liked
+        const shortCandidates =
+            cards.filter(
+
+                c =>
+
+                    c.horizonId === "SHORT" &&
+                    c.direction === "BULLISH" &&
+                    c.entry > 0 &&
+                    (c.qualified || c.state === "watching" || c.state === "triggered")
+
+            );
+
+        const uniqueShort =
+            [...new Set(shortCandidates.map(c => c.symbol))];
+
+        const m30BySymbol =
+            new Map<string, Candle[]>();
+
+        for (let i = 0; i < uniqueShort.length; i += batchSize) {
+
+            const batch =
+                uniqueShort.slice(i, i + batchSize);
+
+            await Promise.all(
+
+                batch.map(async symbol => {
+
+                    try {
+
+                        // 5 sessions of 30-minute bars
+                        const bars =
+                            await this.bdk.getMinuteHistory(symbol, 5, "30");
+
+                        m30BySymbol.set(symbol, bars);
+
+                    } catch (err) {
+
+                        console.error(`30m history failed: ${symbol}`, err);
+
+                        m30BySymbol.set(symbol, []);
+
+                    }
+
+                })
+
+            );
+
+        }
+
+        for (const card of cards) {
+
+            if (card.horizonId !== "SHORT") {
+
+                card.confirmTf = null;
+
+                card.confirmStatus = "n/a";
+
+                card.confirmReason = "Daily only (1–3 week)";
+
+                continue;
+
+            }
+
+            card.confirmTf = "30m";
+
+            const bars =
+                m30BySymbol.get(card.symbol) ?? [];
+
+            const conf =
+                this.confirm30.evaluate(
+
+                    bars,
+
+                    card.entry,
+
+                    card.stop,
+
+                    card.direction
+
+                );
+
+            card.confirmStatus = conf.status;
+
+            card.confirmReason = conf.reason;
+
+            // Daily had a take → require 30m confirm to stay qualified
+            if (card.qualified) {
+
+                if (conf.status === "confirmed") {
+
+                    card.reason =
+                        `${card.reason} · ${conf.reason}`;
+
+                } else {
+
+                    card.qualified = false;
+
+                    card.state = "watching";
+
+                    card.reason =
+                        `Daily OK — ${conf.reason}`;
+
+                    // Soft score so it still ranks near top of watching
+                    card.score = Math.max(40, card.score - 12);
+
+                }
+
+            } else if (conf.status === "confirmed" && card.entry > 0) {
+
+                // Watching name already trading at entry on 30m — note it
+                card.reason =
+                    `${card.reason} · 30m at entry (daily not full qualify)`;
+
+            }
+
+        }
+
         for (const card of cards) {
 
             if (!card.qualified) continue;
@@ -366,7 +496,13 @@ export class SwingScanner {
 
             triggerTime: t.display,
 
-            qualifiedAt: result.qualified ? t.iso : null
+            qualifiedAt: result.qualified ? t.iso : null,
+
+            confirmTf: null,
+
+            confirmStatus: "n/a",
+
+            confirmReason: ""
 
         };
 
@@ -419,7 +555,13 @@ export class SwingScanner {
 
             triggerTime: t.display,
 
-            qualifiedAt: result.qualified ? t.iso : null
+            qualifiedAt: result.qualified ? t.iso : null,
+
+            confirmTf: null,
+
+            confirmStatus: "n/a",
+
+            confirmReason: ""
 
         };
 
