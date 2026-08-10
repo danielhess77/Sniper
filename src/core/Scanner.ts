@@ -2,9 +2,10 @@
  * Sniper
  * Scanner
  *
- * Version: 2.9
+ * Version: 2.10
  *
- * Sequential history + today-ET session gate on qualified cards.
+ * Evaluate playbooks on today's ET bars only (plus a short prior-day
+ * tail for gap/drive context). Session gate still requires trigger today.
  */
 
 import { BDKClient, Candle } from "./BDKClient.js";
@@ -13,8 +14,43 @@ import type { ScanCard } from "../types.js";
 import { normalizeScan } from "./ScanNormalizer.js";
 import { OptionSelectEngine } from "../engines/OptionSelectEngine.js";
 import { etCalendarDay } from "./SessionDay.js";
+import { MarketSession } from "../utils/MarketSession.js";
 
 export type ScanResult = ScanCard;
+
+function candlesForIntradayEval(candles: Candle[]): Candle[] {
+
+    const today = etCalendarDay();
+
+    const todayBars = MarketSession.getSessionDay(candles, today);
+
+    if (todayBars.length >= 20) {
+
+        // Enough of today — use today only so OR/VWAP/drive aren't multi-day
+        return todayBars;
+
+    }
+
+    // Early session: keep a short prior-day tail for gap context
+    const sorted = [...candles].sort(
+
+        (a, b) => Number(a.datetime) - Number(b.datetime)
+
+    );
+
+    const todayStart = todayBars.length
+
+        ? Number(todayBars[0].datetime)
+
+        : Date.now();
+
+    const prior = sorted.filter(c => Number(c.datetime) < todayStart);
+
+    const tail = prior.slice(-40);
+
+    return [...tail, ...todayBars];
+
+}
 
 export class Scanner {
 
@@ -41,7 +77,7 @@ export class Scanner {
         console.log("");
         console.log("========================================");
         console.log(`Scanning ${symbols.length} symbols (throttled)...`);
-        console.log(`Session gate: only qualify triggers on ${todayEt} ET`);
+        console.log(`Session: ${todayEt} ET — OR/eval scoped to today`);
         console.log("========================================");
 
         const histories: { symbol: string; candles: Candle[] }[] = [];
@@ -78,21 +114,24 @@ export class Scanner {
 
         for (const history of histories) {
 
-            if (history.candles.length < 30) {
+            const evalCandles =
+                candlesForIntradayEval(history.candles);
+
+            if (evalCandles.length < 15) {
 
                 continue;
 
             }
 
             console.log("");
-            console.log(`========== ${history.symbol} ==========`);
+            console.log(`========== ${history.symbol} (${evalCandles.length} bars) ==========`);
 
             for (const playbook of this.playbooks) {
 
                 try {
 
                     const result =
-                        playbook.evaluate(history.candles);
+                        playbook.evaluate(evalCandles);
 
                     const trace =
                         playbook.trace(result);
@@ -111,7 +150,7 @@ export class Scanner {
                     }
 
                     const validation =
-                        playbook.validate(history.candles, result);
+                        playbook.validate(evalCandles, result);
 
                     console.log("");
 
@@ -138,12 +177,10 @@ export class Scanner {
 
                             result,
 
-                            history.candles
+                            evalCandles
 
                         );
 
-                    // Drop prior-session hits from the result list entirely
-                    // (UI is qualified-only; avoids score clutter)
                     if (!card.qualified) {
 
                         console.log("SESSION GATE: skip (not today ET)");
