@@ -2,13 +2,12 @@
  * Sniper
  * Scanner
  *
- * Version: 2.6
+ * Version: 2.7
  *
- * After playbooks qualify, attach a long call/put suggestion
- * from the option chain (rate-limit friendly: only qualified).
+ * Per-symbol history fetch — one BDK failure no longer aborts the whole scan.
  */
 
-import { BDKClient } from "./BDKClient.js";
+import { BDKClient, Candle } from "./BDKClient.js";
 import { Playbook } from "../playbooks/Playbook.js";
 import type { ScanCard } from "../types.js";
 import { normalizeScan } from "./ScanNormalizer.js";
@@ -41,21 +40,65 @@ export class Scanner {
         console.log(`Scanning ${symbols.length} symbols...`);
         console.log("========================================");
 
-        const histories = await Promise.all(
+        const histories: { symbol: string; candles: Candle[] }[] = [];
+        const batchSize = 4;
 
-            symbols.map(async symbol => ({
+        for (let i = 0; i < symbols.length; i += batchSize) {
 
-                symbol,
+            const batch = symbols.slice(i, i + batchSize);
 
-                candles: await this.bdk.getHistory(symbol)
+            const part = await Promise.all(
 
-            }))
+                batch.map(async symbol => {
 
-        );
+                    try {
+
+                        const candles = await this.bdk.getHistory(symbol);
+
+                        return { symbol, candles };
+
+                    } catch (err) {
+
+                        const msg = err instanceof Error ? err.message : String(err);
+
+                        console.error(`History failed: ${symbol} — ${msg.slice(0, 120)}`);
+
+                        return { symbol, candles: [] as Candle[] };
+
+                    }
+
+                })
+
+            );
+
+            histories.push(...part);
+
+            // light pacing so BDK worker is less likely to 500 the batch
+            if (i + batchSize < symbols.length) {
+
+                await new Promise(r => setTimeout(r, 150));
+
+            }
+
+        }
+
+        const failed = histories.filter(h => h.candles.length === 0).length;
+
+        if (failed > 0) {
+
+            console.warn(`History empty/failed for ${failed}/${symbols.length} symbols`);
+
+        }
 
         const results: ScanResult[] = [];
 
         for (const history of histories) {
+
+            if (history.candles.length < 30) {
+
+                continue;
+
+            }
 
             console.log("");
             console.log(`========== ${history.symbol} ==========`);
@@ -134,7 +177,6 @@ export class Scanner {
 
         }
 
-        // Option suggestions only for qualified directional setups
         for (const card of results) {
 
             if (!card.qualified) continue;

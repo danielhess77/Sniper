@@ -2,11 +2,7 @@
  * Sniper
  * Broker Development Kit Client
  *
- * Version: 1.1
- *
- * getHistory uses period-based params (not start/end wall-clock).
- * start.setHours(4,0,0,0) on a UTC Codespace made endDate < startDate
- * before ~4:00 UTC → Schwab 400 "Enddate is before startDate".
+ * Version: 1.2
  */
 
 export interface Candle {
@@ -97,8 +93,7 @@ export class BDKClient {
         "https://bdk.daniel-hess7.workers.dev";
 
     /**
-     * Intraday / recent minute bars for playbook engines.
-     * Uses period (not startDate/endDate) so Schwab never sees inverted range.
+     * Intraday minute bars — period-based (no startDate/endDate).
      */
     async getHistory(
 
@@ -108,7 +103,7 @@ export class BDKClient {
 
         frequency = "1",
 
-        extendedHours = true
+        extendedHours = false
 
     ): Promise<Candle[]> {
 
@@ -117,7 +112,6 @@ export class BDKClient {
 
         url.searchParams.set("symbol", symbol);
 
-        // 2 sessions of 1-min bars is enough for OR / drive / VWAP playbooks
         url.searchParams.set("periodType", "day");
 
         url.searchParams.set("period", "2");
@@ -320,22 +314,52 @@ export class BDKClient {
 
         const response = await fetch(url);
 
+        const body = await response.text();
+
         if (!response.ok) {
 
-            const body = await response.text();
+            // Prefer Schwab JSON error detail over Cloudflare HTML wall
+            let detail = body.slice(0, 240).replace(/\s+/g, " ");
 
-            console.error("BDK Response:");
-            console.error(body);
+            if (body.trimStart().startsWith("<!DOCTYPE") || body.includes("cf-error")) {
 
-            throw new Error(
-                `BDK request failed (${response.status}): ${body.slice(0, 200)}`
-            );
+                detail = "Cloudflare worker exception (HTML 5xx) — check BDK auth / worker logs";
+
+            } else {
+
+                try {
+
+                    const j = JSON.parse(body);
+
+                    if (j?.errors?.[0]?.detail) detail = j.errors[0].detail;
+
+                    else if (j?.error) detail = String(j.error);
+
+                } catch {
+
+                    // keep snippet
+
+                }
+
+            }
+
+            console.error("BDK Response:", detail);
+
+            throw new Error(`BDK request failed (${response.status}): ${detail}`);
 
         }
 
-        const data = await response.json();
+        try {
 
-        return data.candles ?? [];
+            const data = JSON.parse(body);
+
+            return data.candles ?? [];
+
+        } catch {
+
+            throw new Error("BDK returned non-JSON body for history");
+
+        }
 
     }
 
