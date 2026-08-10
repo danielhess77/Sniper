@@ -2,10 +2,7 @@
  * Sniper
  * Opening Drive + Hold Playbook
  *
- * Version: 1.0
- *
- * Gap / open drive in the first 15 minutes, then hold.
- * Stop beyond drive extreme; target = drive height measured move.
+ * Version: 1.1 — target = 1.6 × risk so RR clears 1.5
  */
 
 import { Candle } from "../core/BDKClient.js";
@@ -27,7 +24,6 @@ export interface OpeningDriveHoldResult {
 
     qualified: boolean;
 
-    /** Alias shape for ScanNormalizer direction */
     openingRange: {
 
         direction: "BULLISH" | "BEARISH" | "NONE";
@@ -101,29 +97,32 @@ export class OpeningDriveHold
                 drive.confirmPrice;
 
             const buffer =
-                drive.driveHeight * 0.05;
+                Math.max(drive.driveHeight * 0.05, entry * 0.001);
 
             let stop: number;
-
-            let target: number;
 
             if (drive.direction === "BULLISH") {
 
                 stop =
                     drive.driveLow - buffer;
 
-                target =
-                    entry + drive.driveHeight;
-
             } else {
 
                 stop =
                     drive.driveHigh + buffer;
 
-                target =
-                    entry - drive.driveHeight;
-
             }
+
+            const riskDist =
+                Math.abs(entry - stop);
+
+            const target =
+
+                drive.direction === "BULLISH"
+
+                    ? entry + riskDist * 1.6
+
+                    : entry - riskDist * 1.6;
 
             trade =
                 this.risk.evaluateTrade(
@@ -142,10 +141,9 @@ export class OpeningDriveHold
             drive.direction !== "NONE" &&
             trade.valid;
 
-        // Candle patterns help but structure + RR can stand alone
         const qualified =
             structureOk &&
-            (confirmation.confirmed || trade.riskReward >= 1.6);
+            (confirmation.confirmed || trade.riskReward >= 1.5);
 
         const gapBonus =
             Math.abs(drive.gapPct) >= 0.005 ? 5 : 0;
@@ -244,12 +242,10 @@ export class OpeningDriveHold
         const last =
             candles[candles.length - 1];
 
-        const d = result.drive;
-
         if (
 
-            d.direction === "BULLISH" &&
-            last.close < d.holdLevel
+            result.drive.direction === "BULLISH" &&
+            last.close < result.trade.stop
 
         ) {
 
@@ -257,7 +253,7 @@ export class OpeningDriveHold
 
                 active: false,
 
-                reason: "Lost drive hold level"
+                reason: "Past stop"
 
             };
 
@@ -265,8 +261,8 @@ export class OpeningDriveHold
 
         if (
 
-            d.direction === "BEARISH" &&
-            last.close > d.holdLevel
+            result.drive.direction === "BEARISH" &&
+            last.close > result.trade.stop
 
         ) {
 
@@ -274,7 +270,7 @@ export class OpeningDriveHold
 
                 active: false,
 
-                reason: "Lost drive hold level"
+                reason: "Past stop"
 
             };
 

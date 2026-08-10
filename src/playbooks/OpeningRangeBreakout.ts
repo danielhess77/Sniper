@@ -2,10 +2,11 @@
  * Sniper
  * Opening Range Breakout Playbook
  *
- * Version: 3.2
+ * Version: 3.3
  *
- * Structure-first: 30m OR break + valid R:R is enough.
- * Candle patterns boost score but are not required (rare on 1m).
+ * Risk geometry: stop = opposite OR side; target = 1.6 × risk
+ * so breakouts near the OR edge still clear min R:R 1.5.
+ * (Old measured-move = 1× OR height → RR ≈ 1.0 when entry ≈ high.)
  */
 
 import { Candle } from "../core/BDKClient.js";
@@ -94,16 +95,17 @@ implements Playbook<OpeningRangeBreakoutResult> {
 
                     : openingRange.high;
 
-            const rangeHeight =
-                openingRange.high - openingRange.low;
+            const riskDist =
+                Math.abs(entry - stop);
 
+            // 1.6R target so geometry always clears min RR 1.5 when risk is valid
             const target =
 
                 openingRange.direction === "BULLISH"
 
-                    ? entry + rangeHeight
+                    ? entry + riskDist * 1.6
 
-                    : entry - rangeHeight;
+                    : entry - riskDist * 1.6;
 
             trade =
                 this.risk.evaluateTrade(
@@ -208,8 +210,6 @@ implements Playbook<OpeningRangeBreakoutResult> {
         const last =
             candles[candles.length - 1];
 
-        // Only kill if clearly past stop (full OR opposite side),
-        // not a mild pullback into the range
         if (
 
             result.openingRange.direction === "BULLISH" &&

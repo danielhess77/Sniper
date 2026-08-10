@@ -2,11 +2,11 @@
  * Sniper
  * Failed Opening Range / Failed Breakout Playbook
  *
- * Version: 1.0
+ * Version: 1.1
  *
- * Fade an OR breakout that reclaims back inside the range.
- * Stop beyond the post-breakout extreme.
- * Target = measured move of OR height in the fade direction.
+ * Stop uses max(structural extreme buffer, 25% of OR height) so
+ * min-risk distance can pass when the fail print is tight to the extreme.
+ * Target = 1.6 × risk for min RR.
  */
 
 import { Candle } from "../core/BDKClient.js";
@@ -95,35 +95,52 @@ export class FailedOpeningRangeBreakout
                 openingRange.failPrice;
 
             const rangeHeight =
-                openingRange.high - openingRange.low;
+                Math.max(
+                    openingRange.high - openingRange.low,
+                    0.01
+                );
 
-            // Stop beyond the failed breakout extreme (small buffer)
-            const buffer =
-                rangeHeight * 0.05;
+            // Structural stop beyond excursion, but at least 25% of OR height
+            const minStopDist =
+                Math.max(rangeHeight * 0.25, entry * 0.0015, 0.50);
 
             let stop: number;
 
-            let target: number;
-
             if (openingRange.direction === "BEARISH") {
 
-                // Fade failed upside breakout → short/puts
+                // Fade failed upside breakout
                 stop =
-                    openingRange.excursionExtreme + buffer;
+                    Math.max(
 
-                target =
-                    entry - rangeHeight;
+                        openingRange.excursionExtreme,
+
+                        entry
+
+                    ) + minStopDist;
 
             } else {
 
-                // Fade failed downside breakout → long/calls
                 stop =
-                    openingRange.excursionExtreme - buffer;
+                    Math.min(
 
-                target =
-                    entry + rangeHeight;
+                        openingRange.excursionExtreme,
+
+                        entry
+
+                    ) - minStopDist;
 
             }
+
+            const riskDist =
+                Math.abs(entry - stop);
+
+            const target =
+
+                openingRange.direction === "BEARISH"
+
+                    ? entry - riskDist * 1.6
+
+                    : entry + riskDist * 1.6;
 
             trade =
                 this.risk.evaluateTrade(
@@ -138,14 +155,13 @@ export class FailedOpeningRangeBreakout
 
         }
 
-        // Prefer candle confirmation but allow pure structure if RR is solid
         const structureOk =
             openingRange.direction !== "NONE" &&
             trade.valid;
 
         const qualified =
             structureOk &&
-            (confirmation.confirmed || trade.riskReward >= 1.8);
+            (confirmation.confirmed || trade.riskReward >= 1.5);
 
         const score =
             this.score.evaluate({
@@ -235,11 +251,10 @@ export class FailedOpeningRangeBreakout
 
         const or = result.openingRange;
 
-        // Invalidate if price re-breaks the failed side with authority
         if (
 
             or.direction === "BEARISH" &&
-            last.close > or.excursionExtreme
+            last.close > result.trade.stop
 
         ) {
 
@@ -247,7 +262,7 @@ export class FailedOpeningRangeBreakout
 
                 active: false,
 
-                reason: "Re-broke above failed high"
+                reason: "Past stop (re-broke failed high)"
 
             };
 
@@ -256,7 +271,7 @@ export class FailedOpeningRangeBreakout
         if (
 
             or.direction === "BULLISH" &&
-            last.close < or.excursionExtreme
+            last.close < result.trade.stop
 
         ) {
 
@@ -264,7 +279,7 @@ export class FailedOpeningRangeBreakout
 
                 active: false,
 
-                reason: "Re-broke below failed low"
+                reason: "Past stop (re-broke failed low)"
 
             };
 
