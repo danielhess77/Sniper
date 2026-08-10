@@ -2,17 +2,19 @@
  * Sniper
  * Failed Opening Range Engine
  *
- * Version: 1.0
+ * Version: 1.1
  *
- * 1) Opening range forms
- * 2) Price breaks out (close beyond high/low)
- * 3) Price reclaims back inside the range
- *
- * Trade direction is OPPOSITE the breakout (fade).
+ * 30-minute OR (9:30–10:00 ET). No fail signals until range is complete.
+ * 1) Full OR forms
+ * 2) Close beyond high/low after 10:00
+ * 3) Reclaim back inside → fade
  */
 
 import { Candle } from "../core/BDKClient.js";
-import { MarketSession } from "../utils/MarketSession.js";
+import {
+    MarketSession,
+    OPENING_RANGE_MINUTES
+} from "../utils/MarketSession.js";
 import { DecisionStep } from "../types/DecisionTrace.js";
 import { DecisionTraceEngine } from "./DecisionTraceEngine.js";
 
@@ -21,7 +23,6 @@ export interface FailedOpeningRangeResult {
     /** Direction of the TRADE (fade), not the original breakout */
     direction: "BULLISH" | "BEARISH" | "NONE";
 
-    /** Original breakout side that failed */
     breakoutSide: "BULLISH" | "BEARISH" | "NONE";
 
     high: number;
@@ -34,10 +35,13 @@ export interface FailedOpeningRangeResult {
 
     failPrice: number;
 
-    /** Extreme beyond the range after breakout (stop anchor) */
     excursionExtreme: number;
 
     reason: string;
+
+    rangeMinutes: number;
+
+    complete: boolean;
 
 }
 
@@ -53,33 +57,67 @@ export class FailedOpeningRangeEngine {
     ): FailedOpeningRangeResult {
 
         const openingRange =
-            MarketSession.getOpeningRange(candles);
+            MarketSession.getOpeningRange(
+                candles,
+                OPENING_RANGE_MINUTES
+            );
 
         if (openingRange.candles.length === 0) {
 
-            return this.none("No opening range");
+            return this.none("No opening range", false);
 
         }
 
-        const { high, low, candles: rangeCandles } =
+        if (!openingRange.complete) {
+
+            return this.none(
+
+                `Waiting for full ${OPENING_RANGE_MINUTES}-min OR (through 10:00 ET)`,
+
+                false
+
+            );
+
+        }
+
+        const { high, low } =
             openingRange;
 
         if (high <= low) {
 
-            return this.none("Invalid range");
+            return this.none("Invalid range", true);
 
         }
 
-        const startIndex =
-            rangeCandles.length;
+        let postOrStart = -1;
+
+        for (let i = 0; i < candles.length; i++) {
+
+            if (
+                MarketSession.isRegularSession(candles[i]) &&
+                MarketSession.getSessionMinute(candles[i]) >= OPENING_RANGE_MINUTES
+            ) {
+
+                postOrStart = i;
+
+                break;
+
+            }
+
+        }
+
+        if (postOrStart < 0) {
+
+            return this.none("No post-OR bars yet", true);
+
+        }
 
         let breakoutIndex = -1;
 
         let breakoutSide: "BULLISH" | "BEARISH" | "NONE" =
             "NONE";
 
-        // First close outside the range
-        for (let i = startIndex; i < candles.length; i++) {
+        for (let i = postOrStart; i < candles.length; i++) {
 
             const c = candles[i];
 
@@ -125,13 +163,16 @@ export class FailedOpeningRangeEngine {
 
                 excursionExtreme: 0,
 
-                reason: "No breakout yet"
+                reason: "No breakout yet after 30-min OR",
+
+                rangeMinutes: OPENING_RANGE_MINUTES,
+
+                complete: true
 
             };
 
         }
 
-        // Track extreme after breakout, find reclaim inside
         let excursionExtreme =
             breakoutSide === "BULLISH"
 
@@ -148,7 +189,6 @@ export class FailedOpeningRangeEngine {
                 excursionExtreme =
                     Math.max(excursionExtreme, c.high);
 
-                // Fail = close back inside / at or below OR high
                 if (c.close <= high && i > breakoutIndex) {
 
                     return {
@@ -170,7 +210,11 @@ export class FailedOpeningRangeEngine {
                         excursionExtreme,
 
                         reason:
-                            "Bullish OR breakout failed — reclaimed inside"
+                            "Bullish 30-min OR breakout failed — reclaimed inside",
+
+                        rangeMinutes: OPENING_RANGE_MINUTES,
+
+                        complete: true
 
                     };
 
@@ -202,7 +246,11 @@ export class FailedOpeningRangeEngine {
                         excursionExtreme,
 
                         reason:
-                            "Bearish OR breakout failed — reclaimed inside"
+                            "Bearish 30-min OR breakout failed — reclaimed inside",
+
+                        rangeMinutes: OPENING_RANGE_MINUTES,
+
+                        complete: true
 
                     };
 
@@ -230,7 +278,11 @@ export class FailedOpeningRangeEngine {
 
             excursionExtreme,
 
-            reason: "Breakout still holding outside range"
+            reason: "Breakout still holding outside 30-min OR",
+
+            rangeMinutes: OPENING_RANGE_MINUTES,
+
+            complete: true
 
         };
 
@@ -260,9 +312,13 @@ export class FailedOpeningRangeEngine {
 
             "Range",
 
-            `${result.low.toFixed(2)} → ${result.high.toFixed(2)}`,
+            result.high > 0
 
-            "Opening Range"
+                ? `${result.low.toFixed(2)} → ${result.high.toFixed(2)}`
+
+                : "—",
+
+            `${OPENING_RANGE_MINUTES}-min OR (9:30–10:00 ET)`
 
         );
 
@@ -318,7 +374,9 @@ export class FailedOpeningRangeEngine {
 
     private none(
 
-        reason: string
+        reason: string,
+
+        complete: boolean
 
     ): FailedOpeningRangeResult {
 
@@ -340,7 +398,11 @@ export class FailedOpeningRangeEngine {
 
             excursionExtreme: 0,
 
-            reason
+            reason,
+
+            rangeMinutes: OPENING_RANGE_MINUTES,
+
+            complete
 
         };
 

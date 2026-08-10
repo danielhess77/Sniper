@@ -2,15 +2,16 @@
  * Sniper
  * Opening Range Engine
  *
- * Version: 2.0
+ * Version: 2.1
  *
- * Detects Opening Range Breakouts.
- *
- * Owns its own Decision Trace.
+ * 30-minute OR (9:30–10:00 ET). No breakout until range is complete.
  */
 
 import { Candle } from "../core/BDKClient.js";
-import { MarketSession } from "../utils/MarketSession.js";
+import {
+    MarketSession,
+    OPENING_RANGE_MINUTES
+} from "../utils/MarketSession.js";
 import {
     DecisionStep
 } from "../types/DecisionTrace.js";
@@ -35,6 +36,11 @@ export interface OpeningRangeResult {
 
     breakoutCandle: Candle | null;
 
+    /** Minutes used for OR (always 30 for Sniper) */
+    rangeMinutes: number;
+
+    complete: boolean;
+
 }
 
 export class OpeningRangeEngine {
@@ -47,11 +53,19 @@ export class OpeningRangeEngine {
     ): OpeningRangeResult {
 
         const openingRange =
-            MarketSession.getOpeningRange(candles);
+            MarketSession.getOpeningRange(
+                candles,
+                OPENING_RANGE_MINUTES
+            );
 
-        if (openingRange.candles.length === 0) {
+        if (
+            openingRange.candles.length === 0 ||
+            !openingRange.complete
+        ) {
 
-            return this.none();
+            return this.none(
+                openingRange.complete
+            );
 
         }
 
@@ -65,12 +79,55 @@ export class OpeningRangeEngine {
 
         } = openingRange;
 
+        // First bar after OR window (session minute >= 30)
         const startIndex =
             rangeCandles.length;
 
+        // Align start to first post-OR regular-session index in full array
+        let postOrStart = -1;
+
+        for (let i = 0; i < candles.length; i++) {
+
+            if (
+                MarketSession.isRegularSession(candles[i]) &&
+                MarketSession.getSessionMinute(candles[i]) >= OPENING_RANGE_MINUTES
+            ) {
+
+                postOrStart = i;
+
+                break;
+
+            }
+
+        }
+
+        if (postOrStart < 0) {
+
+            return {
+
+                direction: "NONE",
+
+                high,
+
+                low,
+
+                breakoutIndex: -1,
+
+                breakoutPrice: 0,
+
+                breakoutCandle: null,
+
+                rangeMinutes: OPENING_RANGE_MINUTES,
+
+                complete: true
+
+            };
+
+        }
+
         for (
 
-            let i = startIndex;
+            let i = postOrStart;
 
             i < candles.length;
 
@@ -80,10 +137,6 @@ export class OpeningRangeEngine {
 
             const candle =
                 candles[i];
-
-            //--------------------------------------------------
-            // Bullish Breakout
-            //--------------------------------------------------
 
             if (candle.close > high) {
 
@@ -101,15 +154,15 @@ export class OpeningRangeEngine {
                         candle.close,
 
                     breakoutCandle:
-                        candle
+                        candle,
+
+                    rangeMinutes: OPENING_RANGE_MINUTES,
+
+                    complete: true
 
                 };
 
             }
-
-            //--------------------------------------------------
-            // Bearish Breakout
-            //--------------------------------------------------
 
             if (candle.close < low) {
 
@@ -127,7 +180,11 @@ export class OpeningRangeEngine {
                         candle.close,
 
                     breakoutCandle:
-                        candle
+                        candle,
+
+                    rangeMinutes: OPENING_RANGE_MINUTES,
+
+                    complete: true
 
                 };
 
@@ -147,25 +204,21 @@ export class OpeningRangeEngine {
 
             breakoutPrice: 0,
 
-            breakoutCandle: null
+            breakoutCandle: null,
+
+            rangeMinutes: OPENING_RANGE_MINUTES,
+
+            complete: true
 
         };
 
     }
-
-    //--------------------------------------------------
-    // Decision Trace
-    //--------------------------------------------------
 
     trace(
         result: OpeningRangeResult
     ): DecisionStep[] {
 
         this.traceEngine.reset();
-
-        //--------------------------------------------------
-        // Breakout
-        //--------------------------------------------------
 
         this.traceEngine.add(
 
@@ -175,31 +228,31 @@ export class OpeningRangeEngine {
 
             result.direction,
 
-            result.direction === "NONE"
+            !result.complete
 
-                ? "No breakout detected"
+                ? `Waiting for full ${OPENING_RANGE_MINUTES}-min OR (through 10:00 ET)`
 
-                : `${result.direction} breakout confirmed`
+                : result.direction === "NONE"
+
+                    ? "No breakout yet after 30-min OR"
+
+                    : `${result.direction} breakout of 30-min OR`
 
         );
-
-        //--------------------------------------------------
-        // Range
-        //--------------------------------------------------
 
         this.traceEngine.addInfo(
 
             "Range",
 
-            `${result.low.toFixed(2)} → ${result.high.toFixed(2)}`,
+            result.high > 0
 
-            "Opening Range"
+                ? `${result.low.toFixed(2)} → ${result.high.toFixed(2)}`
+
+                : "—",
+
+            `${OPENING_RANGE_MINUTES}-min OR (9:30–10:00 ET)`
 
         );
-
-        //--------------------------------------------------
-        // Breakout Candle
-        //--------------------------------------------------
 
         this.traceEngine.addInfo(
 
@@ -225,11 +278,11 @@ export class OpeningRangeEngine {
 
     }
 
-    //--------------------------------------------------
-    // Empty Result
-    //--------------------------------------------------
+    private none(
 
-    private none(): OpeningRangeResult {
+        complete = false
+
+    ): OpeningRangeResult {
 
         return {
 
@@ -243,7 +296,11 @@ export class OpeningRangeEngine {
 
             breakoutPrice: 0,
 
-            breakoutCandle: null
+            breakoutCandle: null,
+
+            rangeMinutes: OPENING_RANGE_MINUTES,
+
+            complete
 
         };
 
