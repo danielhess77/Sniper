@@ -132,8 +132,8 @@ function App() {
                 return visible.find(r => r.symbol === prev.symbol && r.playbook === prev.playbook) ?? visible[0];
             });
             setError("");
-        } catch {
-            setError("Unable to connect to Sniper API");
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "Unable to connect to Sniper API");
         } finally {
             setLoading(false);
         }
@@ -157,8 +157,10 @@ function App() {
                     r => r.symbol === prev.symbol && r.horizonId === prev.horizonId && (r.setupType || "PULLBACK") === (prev.setupType || "PULLBACK")
                 ) ?? visible[0];
             });
-        } catch {
-            if (tab === "swing") setError("Unable to reach Swing endpoint");
+        } catch (err) {
+            if (tab === "swing") {
+                setError(err instanceof Error ? err.message : "Unable to reach Swing endpoint");
+            }
         }
     }
 
@@ -182,8 +184,10 @@ function App() {
             setWatchlistCount(response.count);
             setWatchlistDirty(false);
             setWatchlistMsg(null);
-        } catch {
-            if (tab === "watchlist") setError("Unable to reach Watchlist endpoint");
+        } catch (err) {
+            if (tab === "watchlist") {
+                setError(err instanceof Error ? err.message : "Unable to reach Watchlist endpoint");
+            }
         }
     }
 
@@ -192,8 +196,10 @@ function App() {
             const response = await getJournal();
             setJournalEntries(response.entries);
             setJournalSummary(response.summary);
-        } catch {
-            if (tab === "journal") setError("Unable to reach Journal endpoint");
+        } catch (err) {
+            if (tab === "journal") {
+                setError(err instanceof Error ? err.message : "Unable to reach Journal endpoint");
+            }
         }
     }
 
@@ -382,7 +388,7 @@ function App() {
                 <button className={`tab ${tab === "watchlist" ? "active" : ""}`} onClick={() => { setTab("watchlist"); refreshWatchlist(); }}>Watchlist</button>
             </div>
 
-            {error && <div style={{ color: "#ff5d73", marginBottom: 20 }}>{error}</div>}
+            {error && <div style={{ color: "#ff5d73", marginBottom: 20, maxWidth: 900 }}>{error}</div>}
 
             {tab === "intraday" && (
                 <>
