@@ -2,7 +2,11 @@
  * Sniper
  * Broker Development Kit Client
  *
- * Version: 1.4 — normalize candle datetime (sec → ms)
+ * Version: 1.5
+ *
+ * Minute history uses startDate/endDate (epoch ms) instead of period=N.
+ * Schwab periodType=day often returns only *completed* sessions, which
+ * left every symbol stuck on prior close during live RTH.
  */
 
 import { bdkThrottle } from "./BDKRateLimit.js";
@@ -89,12 +93,10 @@ export interface OptionChainResult {
 
 }
 
-/** Schwab sometimes returns epoch seconds; session math needs ms. */
 function normalizeDatetime(dt: number): number {
 
     if (!Number.isFinite(dt) || dt <= 0) return dt;
 
-    // ms timestamps are ~1.6e12+; seconds are ~1.6e9
     if (dt < 1e12) return Math.round(dt * 1000);
 
     return dt;
@@ -121,11 +123,27 @@ function normalizeCandles(raw: any[]): Candle[] {
 
 }
 
+/** ~3 calendar days back through now (ms) */
+function intradayWindowMs(): { startDate: number; endDate: number } {
+
+    const endDate = Date.now();
+
+    // 4 calendar days covers a long weekend + prior session
+    const startDate = endDate - 4 * 24 * 60 * 60 * 1000;
+
+    return { startDate, endDate };
+
+}
+
 export class BDKClient {
 
     private readonly baseUrl =
         "https://bdk.daniel-hess7.workers.dev";
 
+    /**
+     * 1-minute bars for intraday scanners.
+     * Uses startDate/endDate so the *current* RTH session is included.
+     */
     async getHistory(
 
         symbol: string,
@@ -141,20 +159,25 @@ export class BDKClient {
         const url =
             new URL("/history", this.baseUrl);
 
+        const { startDate, endDate } = intradayWindowMs();
+
         url.searchParams.set("symbol", symbol);
-
-        url.searchParams.set("periodType", "day");
-
-        url.searchParams.set("period", "2");
 
         url.searchParams.set("frequencyType", frequencyType);
 
         url.searchParams.set("frequency", frequency);
 
+        url.searchParams.set("startDate", String(startDate));
+
+        url.searchParams.set("endDate", String(endDate));
+
         url.searchParams.set(
             "needExtendedHoursData",
             extendedHours ? "true" : "false"
         );
+
+        // Intentionally omit period / periodType — they conflict with date bounds
+        // and period-only requests were returning prior close only.
 
         return this.fetchCandles(url);
 
@@ -173,18 +196,20 @@ export class BDKClient {
         const url =
             new URL("/history", this.baseUrl);
 
-        const period =
-            Math.min(10, Math.max(1, Math.floor(days)));
+        const endDate = Date.now();
+
+        const startDate =
+            endDate - Math.min(10, Math.max(1, Math.floor(days))) * 24 * 60 * 60 * 1000;
 
         url.searchParams.set("symbol", symbol);
-
-        url.searchParams.set("periodType", "day");
-
-        url.searchParams.set("period", String(period));
 
         url.searchParams.set("frequencyType", "minute");
 
         url.searchParams.set("frequency", frequency);
+
+        url.searchParams.set("startDate", String(startDate));
+
+        url.searchParams.set("endDate", String(endDate));
 
         url.searchParams.set("needExtendedHoursData", "false");
 
