@@ -2,10 +2,10 @@
  * Sniper
  * Scanner
  *
- * Version: 2.11
+ * Version: 2.12
  *
- * validate() is informational — does not hide a same-day qualified setup.
- * (Previously midday "lost structure" wiped the whole board.)
+ * Logs first/last bar ET + RTH/OR counts so incomplete history is obvious.
+ * Session day for OR/eval prefers the last candle's ET date (data-driven).
  */
 
 import { BDKClient, Candle } from "./BDKClient.js";
@@ -14,22 +14,135 @@ import type { ScanCard } from "../types.js";
 import { normalizeScan } from "./ScanNormalizer.js";
 import { OptionSelectEngine } from "../engines/OptionSelectEngine.js";
 import { etCalendarDay } from "./SessionDay.js";
-import { MarketSession } from "../utils/MarketSession.js";
+import { MarketSession, OPENING_RANGE_MINUTES } from "../utils/MarketSession.js";
 
 export type ScanResult = ScanCard;
 
-function candlesForIntradayEval(candles: Candle[]): Candle[] {
+function formatEtClock(ms: number): string {
 
-    const today = etCalendarDay();
+    if (!Number.isFinite(ms) || ms <= 0) return "?";
 
-    const todayBars = MarketSession.getSessionDay(candles, today);
+    return new Date(ms).toLocaleTimeString("en-US", {
 
-    if (todayBars.length >= 20) {
+        timeZone: "America/New_York",
+
+        hour: "numeric",
+
+        minute: "2-digit",
+
+        second: "2-digit"
+
+    });
+
+}
+
+function sessionDayFromData(candles: Candle[]): string {
+
+    if (!candles.length) return etCalendarDay();
+
+    const last = candles[candles.length - 1];
+
+    const ms = Number(last.datetime);
+
+    if (!Number.isFinite(ms) || ms <= 0) return etCalendarDay();
+
+    return etCalendarDay(ms);
+
+}
+
+function describeBars(
+
+    symbol: string,
+
+    rawCount: number,
+
+    evalCandles: Candle[],
+
+    dayEt: string
+
+): void {
+
+    if (evalCandles.length === 0) {
+
+        console.log(
+
+            `${symbol} history: raw=${rawCount} eval=0 | no bars for session ${dayEt}`
+
+        );
+
+        return;
+
+    }
+
+    const sorted = [...evalCandles].sort(
+
+        (a, b) => Number(a.datetime) - Number(b.datetime)
+
+    );
+
+    const firstMs = Number(sorted[0].datetime);
+
+    const lastMs = Number(sorted[sorted.length - 1].datetime);
+
+    const rth = sorted.filter(c => MarketSession.isRegularSession(c));
+
+    const orWindow = rth.filter(c =>
+
+        MarketSession.isOpeningRange(c, OPENING_RANGE_MINUTES)
+
+    );
+
+    const postOr = rth.filter(c =>
+
+        MarketSession.getSessionMinute(c) >= OPENING_RANGE_MINUTES
+
+    );
+
+    console.log(
+
+        `${symbol} history: raw=${rawCount} eval=${sorted.length} | ` +
+
+        `first=${formatEtClock(firstMs)} last=${formatEtClock(lastMs)} ET | ` +
+
+        `RTH=${rth.length} OR-window=${orWindow.length} post-10:00=${postOr.length} | day=${dayEt}`
+
+    );
+
+    if (orWindow.length === 0 && rth.length > 0) {
+
+        const mins = rth.slice(0, 3).map(c =>
+
+            MarketSession.getSessionMinute(c)
+
+        );
+
+        console.log(
+
+            `${symbol} WARN: no 9:30–10:00 bars — sample sessionMinutes=${mins.join(",")}`
+
+        );
+
+    }
+
+}
+
+function candlesForIntradayEval(
+
+    candles: Candle[],
+
+    dayEt: string
+
+): Candle[] {
+
+    const todayBars = MarketSession.getSessionDay(candles, dayEt);
+
+    if (todayBars.length >= 15) {
 
         return todayBars;
 
     }
 
+    // Sparse today: keep short prior tail for gap context
     const sorted = [...candles].sort(
 
         (a, b) => Number(a.datetime) - Number(b.datetime)
@@ -70,12 +183,12 @@ export class Scanner {
         symbols: string[]
     ): Promise<ScanResult[]> {
 
-        const todayEt = etCalendarDay();
+        const clockDay = etCalendarDay();
 
         console.log("");
         console.log("========================================");
         console.log(`Scanning ${symbols.length} symbols (throttled)...`);
-        console.log(`Session: ${todayEt} ET — structure-first qualify`);
+        console.log(`Clock day: ${clockDay} ET — bar diagnostics on`);
         console.log("========================================");
 
         const histories: { symbol: string; candles: Candle[] }[] = [];
@@ -112,10 +225,35 @@ export class Scanner {
 
         for (const history of histories) {
 
+            if (history.candles.length === 0) {
+
+                console.log(`${history.symbol} history: raw=0 | skip`);
+
+                continue;
+
+            }
+
+            // Prefer the session day present in the data (last bar)
+            const dayEt = sessionDayFromData(history.candles);
+
             const evalCandles =
-                candlesForIntradayEval(history.candles);
+                candlesForIntradayEval(history.candles, dayEt);
+
+            describeBars(
+
+                history.symbol,
+
+                history.candles.length,
+
+                evalCandles,
+
+                dayEt
+
+            );
 
             if (evalCandles.length < 15) {
+
+                console.log(`${history.symbol} skip: eval bars < 15`);
 
                 continue;
 
@@ -168,7 +306,6 @@ export class Scanner {
 
                     }
 
-                    // Hard reject only when stop-side structure is clearly broken
                     if (
 
                         !validation.active &&
