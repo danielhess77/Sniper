@@ -1,33 +1,27 @@
 /**
  * MarketSession
  *
- * Opening Range is locked at 30 minutes (9:30–10:00 ET)
- * for ORB and Failed OR playbooks.
- *
- * Multi-day minute history: always scope OR / RTH helpers to
- * the America/New_York calendar day of interest (default = today).
+ * Opening Range locked at 30 minutes (9:30–10:00 ET).
+ * If clock-today has no bars (stale history ending yesterday),
+ * fall back to the most recent ET day present in the series.
  */
 
 import { Candle } from "../core/BDKClient.js";
 import { etCalendarDay } from "../core/SessionDay.js";
 
-/** Canonical opening-range length used by ORB + Failed OR */
 export const OPENING_RANGE_MINUTES = 30;
 
 export interface OpeningRange {
     high: number;
     low: number;
     candles: Candle[];
-    /** True when the full OR window has elapsed (session minute >= 30) */
     complete: boolean;
+    /** ET calendar day used for this OR */
+    dayEt: string;
 }
 
 export class MarketSession {
 
-    /**
-     * Market minute since 9:30 AM Eastern.
-     * 9:30 = 0 … 10:00 = 30 … 16:00 = 390
-     */
     static getSessionMinute(
         candle: Candle
     ): number {
@@ -81,7 +75,6 @@ export class MarketSession {
         );
     }
 
-    /** All RTH bars (any calendar day) — prefer getSessionDay for playbooks. */
     static getRegularSession(
         candles: Candle[]
     ): Candle[] {
@@ -91,13 +84,9 @@ export class MarketSession {
         );
     }
 
-    /**
-     * Bars on a single ET calendar day (default = today).
-     * Fixes multi-day history merging Friday+Monday OR highs/lows.
-     */
     static getSessionDay(
         candles: Candle[],
-        dayEt: string = etCalendarDay()
+        dayEt: string
     ): Candle[] {
 
         return candles.filter(c => {
@@ -112,28 +101,68 @@ export class MarketSession {
 
     }
 
+    /**
+     * Prefer clock today; if no bars that day (API lag / prior close only),
+     * use the latest ET calendar day that appears in the series.
+     */
+    static resolveSessionDay(
+        candles: Candle[],
+        preferredDay: string = etCalendarDay()
+    ): string {
+
+        const preferred = this.getSessionDay(candles, preferredDay);
+
+        if (preferred.length > 0) {
+
+            return preferredDay;
+
+        }
+
+        let bestDay = preferredDay;
+
+        let bestMs = -1;
+
+        for (const c of candles) {
+
+            const ms = Number(c.datetime);
+
+            if (!Number.isFinite(ms) || ms <= bestMs) continue;
+
+            bestMs = ms;
+
+            bestDay = etCalendarDay(ms);
+
+        }
+
+        return bestDay;
+
+    }
+
     static getTodayRegularSession(
         candles: Candle[],
-        dayEt: string = etCalendarDay()
+        dayEt?: string
     ): Candle[] {
 
-        return this.getSessionDay(candles, dayEt).filter(c =>
+        const day =
+            dayEt ?? this.resolveSessionDay(candles);
+
+        return this.getSessionDay(candles, day).filter(c =>
             this.isRegularSession(c)
         );
 
     }
 
-    /**
-     * Opening range high/low for one ET day only (default today).
-     */
     static getOpeningRange(
         candles: Candle[],
         openingMinutes = OPENING_RANGE_MINUTES,
-        dayEt: string = etCalendarDay()
+        dayEt?: string
     ): OpeningRange {
 
+        const day =
+            dayEt ?? this.resolveSessionDay(candles);
+
         const session =
-            this.getTodayRegularSession(candles, dayEt);
+            this.getTodayRegularSession(candles, day);
 
         const rangeCandles =
             session.filter(c =>
@@ -149,7 +178,8 @@ export class MarketSession {
                 high: 0,
                 low: 0,
                 candles: [],
-                complete: false
+                complete: false,
+                dayEt: day
             };
 
         }
@@ -170,7 +200,8 @@ export class MarketSession {
             high,
             low,
             candles: rangeCandles,
-            complete
+            complete,
+            dayEt: day
         };
 
     }

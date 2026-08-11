@@ -2,10 +2,9 @@
  * Sniper
  * Scanner
  *
- * Version: 2.12
+ * Version: 2.13
  *
- * Logs first/last bar ET + RTH/OR counts so incomplete history is obvious.
- * Session day for OR/eval prefers the last candle's ET date (data-driven).
+ * Detects stale history (last bar prior calendar day while RTH is open).
  */
 
 import { BDKClient, Candle } from "./BDKClient.js";
@@ -13,7 +12,7 @@ import { Playbook } from "../playbooks/Playbook.js";
 import type { ScanCard } from "../types.js";
 import { normalizeScan } from "./ScanNormalizer.js";
 import { OptionSelectEngine } from "../engines/OptionSelectEngine.js";
-import { etCalendarDay } from "./SessionDay.js";
+import { etCalendarDay, sessionMinuteEt } from "./SessionDay.js";
 import { MarketSession, OPENING_RANGE_MINUTES } from "../utils/MarketSession.js";
 
 export type ScanResult = ScanCard;
@@ -36,20 +35,6 @@ function formatEtClock(ms: number): string {
 
 }
 
-function sessionDayFromData(candles: Candle[]): string {
-
-    if (!candles.length) return etCalendarDay();
-
-    const last = candles[candles.length - 1];
-
-    const ms = Number(last.datetime);
-
-    if (!Number.isFinite(ms) || ms <= 0) return etCalendarDay();
-
-    return etCalendarDay(ms);
-
-}
-
 function describeBars(
 
     symbol: string,
@@ -58,7 +43,9 @@ function describeBars(
 
     evalCandles: Candle[],
 
-    dayEt: string
+    dayEt: string,
+
+    clockDay: string
 
 ): void {
 
@@ -66,7 +53,7 @@ function describeBars(
 
         console.log(
 
-            `${symbol} history: raw=${rawCount} eval=0 | no bars for session ${dayEt}`
+            `${symbol} history: raw=${rawCount} eval=0 | no bars | clock=${clockDay}`
 
         );
 
@@ -98,15 +85,34 @@ function describeBars(
 
     );
 
+    const stale =
+        dayEt !== clockDay
+
+            ? ` STALE(data=${dayEt} clock=${clockDay})`
+
+            : "";
+
     console.log(
 
         `${symbol} history: raw=${rawCount} eval=${sorted.length} | ` +
 
         `first=${formatEtClock(firstMs)} last=${formatEtClock(lastMs)} ET | ` +
 
-        `RTH=${rth.length} OR-window=${orWindow.length} post-10:00=${postOr.length} | day=${dayEt}`
+        `RTH=${rth.length} OR-window=${orWindow.length} post-10:00=${postOr.length} | ` +
+
+        `day=${dayEt}${stale}`
 
     );
+
+    if (dayEt !== clockDay) {
+
+        console.warn(
+
+            `${symbol} WARN: history ends on ${dayEt}, clock is ${clockDay} — BDK may not be returning today's bars`
+
+        );
+
+    }
 
     if (orWindow.length === 0 && rth.length > 0) {
 
@@ -134,32 +140,31 @@ function candlesForIntradayEval(
 
 ): Candle[] {
 
-    const todayBars = MarketSession.getSessionDay(candles, dayEt);
+    const dayBars = MarketSession.getSessionDay(candles, dayEt);
 
-    if (todayBars.length >= 15) {
+    if (dayBars.length >= 15) {
 
-        return todayBars;
+        return dayBars;
 
     }
 
-    // Sparse today: keep short prior tail for gap context
     const sorted = [...candles].sort(
 
         (a, b) => Number(a.datetime) - Number(b.datetime)
 
     );
 
-    const todayStart = todayBars.length
+    const dayStart = dayBars.length
 
-        ? Number(todayBars[0].datetime)
+        ? Number(dayBars[0].datetime)
 
         : Date.now();
 
-    const prior = sorted.filter(c => Number(c.datetime) < todayStart);
+    const prior = sorted.filter(c => Number(c.datetime) < dayStart);
 
     const tail = prior.slice(-40);
 
-    return [...tail, ...todayBars];
+    return [...tail, ...dayBars];
 
 }
 
@@ -185,10 +190,12 @@ export class Scanner {
 
         const clockDay = etCalendarDay();
 
+        const sessMin = sessionMinuteEt();
+
         console.log("");
         console.log("========================================");
         console.log(`Scanning ${symbols.length} symbols (throttled)...`);
-        console.log(`Clock day: ${clockDay} ET — bar diagnostics on`);
+        console.log(`Clock: ${clockDay} ET | sessionMinute=${sessMin} (0=9:30)`);
         console.log("========================================");
 
         const histories: { symbol: string; candles: Candle[] }[] = [];
@@ -223,6 +230,8 @@ export class Scanner {
 
         const results: ScanResult[] = [];
 
+        let staleCount = 0;
+
         for (const history of histories) {
 
             if (history.candles.length === 0) {
@@ -233,8 +242,14 @@ export class Scanner {
 
             }
 
-            // Prefer the session day present in the data (last bar)
-            const dayEt = sessionDayFromData(history.candles);
+            const dayEt =
+                MarketSession.resolveSessionDay(history.candles, clockDay);
+
+            if (dayEt !== clockDay) {
+
+                staleCount++;
+
+            }
 
             const evalCandles =
                 candlesForIntradayEval(history.candles, dayEt);
@@ -247,13 +262,28 @@ export class Scanner {
 
                 evalCandles,
 
-                dayEt
+                dayEt,
+
+                clockDay
 
             );
 
             if (evalCandles.length < 15) {
 
                 console.log(`${history.symbol} skip: eval bars < 15`);
+
+                continue;
+
+            }
+
+            // Do not qualify 0DTE setups off yesterday's tape during a live session
+            if (dayEt !== clockDay && sessMin >= 0 && sessMin < 390) {
+
+                console.log(
+
+                    `${history.symbol} skip qualify: stale session ${dayEt} while RTH live`
+
+                );
 
                 continue;
 
@@ -298,7 +328,7 @@ export class Scanner {
 
                     if (!validation.active) {
 
-                        console.log(`VALIDATE soft-fail: ${validation.reason} (still listing if today)`);
+                        console.log(`VALIDATE soft-fail: ${validation.reason}`);
 
                     } else {
 
@@ -334,7 +364,7 @@ export class Scanner {
 
                     if (!card.qualified) {
 
-                        console.log("SESSION GATE: skip (not today ET)");
+                        console.log("SESSION GATE: skip");
 
                         continue;
 
@@ -355,6 +385,17 @@ export class Scanner {
                 }
 
             }
+
+        }
+
+        if (staleCount > 0) {
+
+            console.warn("");
+            console.warn(
+
+                `STALE HISTORY: ${staleCount}/${histories.length} symbols have no ${clockDay} bars — check BDK/Schwab minute history`
+
+            );
 
         }
 
