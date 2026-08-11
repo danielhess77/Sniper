@@ -2,19 +2,11 @@
  * Sniper
  * Risk Engine
  *
- * Version: 3.4
+ * Version: 3.5
  *
- * Calculates:
- * - Entry
- * - Stop (structure)
- * - Target (Measured Move)
- * - Risk / Reward
- *
- * Enforces:
- * - Minimum R:R (default 1.5, overridable for swing horizons)
- * - Minimum risk distance (default $0.50 or 0.15%, overridable)
- *
- * Owns its own Decision Trace.
+ * If structure risk is tighter than min distance, widen the stop
+ * (away from entry) to the floor — do not reject the trade.
+ * If R:R is still below min after that, push target to minRR × risk.
  */
 
 import { Candle } from "../core/BDKClient.js";
@@ -55,7 +47,8 @@ export class RiskEngine {
 
     private static readonly MIN_RISK_REWARD = 1.5;
 
-    private static readonly MIN_RISK_DOLLARS = 0.50;
+    /** Soft floor — tight structure is expanded to this, not killed */
+    private static readonly MIN_RISK_DOLLARS = 0.25;
 
     private static readonly MIN_RISK_PCT = 0.0015; // 0.15%
 
@@ -182,6 +175,18 @@ export class RiskEngine {
 
     ): RiskResult {
 
+        if (
+
+            !Number.isFinite(entry) ||
+            !Number.isFinite(stop) ||
+            entry <= 0
+
+        ) {
+
+            return this.none();
+
+        }
+
         const minRR =
             limits?.minRiskReward ?? RiskEngine.MIN_RISK_REWARD;
 
@@ -191,40 +196,69 @@ export class RiskEngine {
         const minRiskPct =
             limits?.minRiskPct ?? RiskEngine.MIN_RISK_PCT;
 
-        const risk =
-            Math.abs(entry - stop);
-
-        const reward =
-            Math.abs(target - entry);
-
-        if (
-
-            risk <= 0 ||
-
-            reward <= 0
-
-        ) {
-
-            return this.none();
-
-        }
-
         const minRisk =
             Math.max(
                 minRiskDollars,
                 entry * minRiskPct
             );
 
+        // Side: long if stop below entry, short if stop above
+        const isLong = stop <= entry;
+
+        let adjStop = stop;
+
+        let risk = Math.abs(entry - adjStop);
+
+        // C: widen stop away from entry until min risk is met
         if (risk < minRisk) {
+
+            if (isLong) {
+
+                adjStop = entry - minRisk;
+
+            } else {
+
+                adjStop = entry + minRisk;
+
+            }
+
+            risk = minRisk;
+
+        }
+
+        if (risk <= 0) {
 
             return this.none();
 
         }
 
-        const riskReward =
-            reward / risk;
+        let adjTarget = target;
 
-        if (riskReward < minRR) {
+        let reward = Math.abs(adjTarget - entry);
+
+        // If target missing/wrong side/too close, place at minRR
+        const targetOnWrongSide =
+            isLong ? adjTarget <= entry : adjTarget >= entry;
+
+        if (targetOnWrongSide || reward / risk < minRR) {
+
+            if (isLong) {
+
+                adjTarget = entry + risk * minRR;
+
+            } else {
+
+                adjTarget = entry - risk * minRR;
+
+            }
+
+            reward = risk * minRR;
+
+        }
+
+        const riskReward = reward / risk;
+
+        if (riskReward < minRR - 1e-9) {
 
             return this.none();
 
@@ -236,9 +270,9 @@ export class RiskEngine {
 
             entry,
 
-            stop,
+            stop: adjStop,
 
-            target,
+            target: adjTarget,
 
             riskReward
 
@@ -268,7 +302,7 @@ export class RiskEngine {
 
                 ? `Entry ${result.entry.toFixed(2)} | Stop ${result.stop.toFixed(2)} | Target ${result.target.toFixed(2)}`
 
-                : "Invalid (min R:R and min risk distance required)"
+                : "Invalid (no usable entry/stop)"
 
         );
 
@@ -290,9 +324,9 @@ export class RiskEngine {
 
             result.valid
 
-                ? "Trade geometry valid"
+                ? "Trade geometry valid (stop/target expanded to floors if needed)"
 
-                : "Failed min R:R or min risk distance"
+                : "Failed geometry"
 
         );
 
