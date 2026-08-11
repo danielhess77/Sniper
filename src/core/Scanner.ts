@@ -2,9 +2,13 @@
  * Sniper
  * Scanner
  *
- * Version: 2.13
+ * Version: 2.14
  *
- * Detects stale history (last bar prior calendar day while RTH is open).
+ * Quality board filters:
+ * - min R:R 2.0 (RiskEngine default)
+ * - min score 80
+ * - freshness: signal within last 30 minutes
+ * - best playbook per symbol only
  */
 
 import { BDKClient, Candle } from "./BDKClient.js";
@@ -16,6 +20,13 @@ import { etCalendarDay, sessionMinuteEt } from "./SessionDay.js";
 import { MarketSession, OPENING_RANGE_MINUTES } from "../utils/MarketSession.js";
 
 export type ScanResult = ScanCard;
+
+/** Keep setups whose signal time is within this many minutes */
+const FRESHNESS_MINUTES = 30;
+
+const MIN_SCORE = 80;
+
+const MIN_RR = 2.0;
 
 function formatEtClock(ms: number): string {
 
@@ -104,32 +115,6 @@ function describeBars(
 
     );
 
-    if (dayEt !== clockDay) {
-
-        console.warn(
-
-            `${symbol} WARN: history ends on ${dayEt}, clock is ${clockDay} — BDK may not be returning today's bars`
-
-        );
-
-    }
-
-    if (orWindow.length === 0 && rth.length > 0) {
-
-        const mins = rth.slice(0, 3).map(c =>
-
-            MarketSession.getSessionMinute(c)
-
-        );
-
-        console.log(
-
-            `${symbol} WARN: no 9:30–10:00 bars — sample sessionMinutes=${mins.join(",")}`
-
-        );
-
-    }
-
 }
 
 function candlesForIntradayEval(
@@ -168,6 +153,68 @@ function candlesForIntradayEval(
 
 }
 
+function isFresh(card: ScanCard, nowMs: number): boolean {
+
+    if (!card.qualifiedAt) return false;
+
+    const signalMs = Date.parse(card.qualifiedAt);
+
+    if (!Number.isFinite(signalMs)) return false;
+
+    const ageMin = (nowMs - signalMs) / 60_000;
+
+    return ageMin >= 0 && ageMin <= FRESHNESS_MINUTES;
+
+}
+
+/** Highest score wins; ties prefer higher R:R */
+function bestPerSymbol(cards: ScanCard[]): ScanCard[] {
+
+    const map = new Map<string, ScanCard>();
+
+    for (const card of cards) {
+
+        const key = card.symbol.toUpperCase();
+
+        const prev = map.get(key);
+
+        if (!prev) {
+
+            map.set(key, card);
+
+            continue;
+
+        }
+
+        if (card.score > prev.score) {
+
+            map.set(key, card);
+
+            continue;
+
+        }
+
+        if (
+
+            card.score === prev.score &&
+            (card.riskReward ?? 0) > (prev.riskReward ?? 0)
+
+        ) {
+
+            map.set(key, card);
+
+        }
+
+    }
+
+    return [...map.values()].sort(
+
+        (a, b) => (b.score - a.score) || (b.riskReward - a.riskReward)
+
+    );
+
+}
+
 export class Scanner {
 
     private optionSelect: OptionSelectEngine;
@@ -192,10 +239,18 @@ export class Scanner {
 
         const sessMin = sessionMinuteEt();
 
+        const nowMs = Date.now();
+
         console.log("");
         console.log("========================================");
         console.log(`Scanning ${symbols.length} symbols (throttled)...`);
-        console.log(`Clock: ${clockDay} ET | sessionMinute=${sessMin} (0=9:30)`);
+        console.log(
+
+            `Clock: ${clockDay} ET | sessionMinute=${sessMin} | ` +
+
+            `filters: score≥${MIN_SCORE} RR≥${MIN_RR} fresh≤${FRESHNESS_MINUTES}m best/symbol`
+
+        );
         console.log("========================================");
 
         const histories: { symbol: string; candles: Candle[] }[] = [];
@@ -228,7 +283,7 @@ export class Scanner {
 
         }
 
-        const results: ScanResult[] = [];
+        const rawResults: ScanResult[] = [];
 
         let staleCount = 0;
 
@@ -276,7 +331,6 @@ export class Scanner {
 
             }
 
-            // Do not qualify 0DTE setups off yesterday's tape during a live session
             if (dayEt !== clockDay && sessMin >= 0 && sessMin < 390) {
 
                 console.log(
@@ -370,7 +424,7 @@ export class Scanner {
 
                     }
 
-                    results.push(card);
+                    rawResults.push(card);
 
                 } catch (error) {
 
@@ -393,15 +447,39 @@ export class Scanner {
             console.warn("");
             console.warn(
 
-                `STALE HISTORY: ${staleCount}/${histories.length} symbols have no ${clockDay} bars — check BDK/Schwab minute history`
+                `STALE HISTORY: ${staleCount}/${histories.length} symbols have no ${clockDay} bars`
 
             );
 
         }
 
-        for (const card of results) {
+        // —— Quality filters ——
+        const afterScoreRr = rawResults.filter(c =>
 
-            if (!card.qualified) continue;
+            c.qualified &&
+            (c.score ?? 0) >= MIN_SCORE &&
+            (c.riskReward ?? 0) >= MIN_RR
+
+        );
+
+        const afterFresh = afterScoreRr.filter(c => isFresh(c, nowMs));
+
+        const results = bestPerSymbol(afterFresh);
+
+        console.log("");
+        console.log(
+
+            `Quality filter: raw=${rawResults.length} → ` +
+
+            `score/RR=${afterScoreRr.length} → ` +
+
+            `fresh=${afterFresh.length} → ` +
+
+            `best/symbol=${results.length}`
+
+        );
+
+        for (const card of results) {
 
             if (card.direction !== "BULLISH" && card.direction !== "BEARISH") {
 
@@ -432,7 +510,7 @@ export class Scanner {
 
         console.log("");
         console.log("========================================");
-        console.log(`Qualified Setups (today ET): ${results.length}`);
+        console.log(`Qualified Setups (board): ${results.length}`);
         console.log("========================================");
 
         return results;

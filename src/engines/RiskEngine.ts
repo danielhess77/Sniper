@@ -2,11 +2,10 @@
  * Sniper
  * Risk Engine
  *
- * Version: 3.5
+ * Version: 3.6 — default min R:R raised to 2.0 for 0DTE quality
  *
- * If structure risk is tighter than min distance, widen the stop
- * (away from entry) to the floor — do not reject the trade.
- * If R:R is still below min after that, push target to minRR × risk.
+ * If structure risk is tighter than min distance, widen the stop.
+ * If R:R is still below min, push target to minRR × risk.
  */
 
 import { Candle } from "../core/BDKClient.js";
@@ -45,20 +44,14 @@ export interface RiskLimits {
 
 export class RiskEngine {
 
-    private static readonly MIN_RISK_REWARD = 1.5;
+    private static readonly MIN_RISK_REWARD = 2.0;
 
-    /** Soft floor — tight structure is expanded to this, not killed */
     private static readonly MIN_RISK_DOLLARS = 0.25;
 
-    private static readonly MIN_RISK_PCT = 0.0015; // 0.15%
+    private static readonly MIN_RISK_PCT = 0.0015;
 
     private traceEngine =
         new DecisionTraceEngine();
-
-    //--------------------------------------------------
-    // Structure-based stop + Measured Move target
-    // Used by FirstPullback, TrendContinuation, VWAPReclaim
-    //--------------------------------------------------
 
     evaluate(
 
@@ -159,10 +152,6 @@ export class RiskEngine {
         return this.evaluateTrade(entry, stop, target);
     }
 
-    //--------------------------------------------------
-    // Generic Trade Evaluation (0DTE + Swing)
-    //--------------------------------------------------
-
     evaluateTrade(
 
         entry: number,
@@ -202,14 +191,12 @@ export class RiskEngine {
                 entry * minRiskPct
             );
 
-        // Side: long if stop below entry, short if stop above
         const isLong = stop <= entry;
 
         let adjStop = stop;
 
         let risk = Math.abs(entry - adjStop);
 
-        // C: widen stop away from entry until min risk is met
         if (risk < minRisk) {
 
             if (isLong) {
@@ -236,7 +223,6 @@ export class RiskEngine {
 
         let reward = Math.abs(adjTarget - entry);
 
-        // If target missing/wrong side/too close, place at minRR
         const targetOnWrongSide =
             isLong ? adjTarget <= entry : adjTarget >= entry;
 
@@ -280,10 +266,6 @@ export class RiskEngine {
 
     }
 
-    //--------------------------------------------------
-    // Decision Trace
-    //--------------------------------------------------
-
     trace(
         result: RiskResult
     ): DecisionStep[] {
@@ -324,7 +306,7 @@ export class RiskEngine {
 
             result.valid
 
-                ? "Trade geometry valid (stop/target expanded to floors if needed)"
+                ? "Trade geometry valid (min R:R 2.0)"
 
                 : "Failed geometry"
 

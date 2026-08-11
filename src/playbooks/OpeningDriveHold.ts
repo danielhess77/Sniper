@@ -2,7 +2,7 @@
  * Sniper
  * Opening Drive + Hold Playbook
  *
- * Version: 1.1 — target = 1.6 × risk so RR clears 1.5
+ * Version: 1.2 — target 2.1× risk for min R:R 2.0
  */
 
 import { Candle } from "../core/BDKClient.js";
@@ -120,9 +120,9 @@ export class OpeningDriveHold
 
                 drive.direction === "BULLISH"
 
-                    ? entry + riskDist * 1.6
+                    ? entry + riskDist * 2.1
 
-                    : entry - riskDist * 1.6;
+                    : entry - riskDist * 2.1;
 
             trade =
                 this.risk.evaluateTrade(
@@ -143,7 +143,7 @@ export class OpeningDriveHold
 
         const qualified =
             structureOk &&
-            (confirmation.confirmed || trade.riskReward >= 1.5);
+            (confirmation.confirmed || trade.riskReward >= 2.0);
 
         const gapBonus =
             Math.abs(drive.gapPct) >= 0.005 ? 5 : 0;

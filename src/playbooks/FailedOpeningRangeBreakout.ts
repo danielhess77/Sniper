@@ -2,11 +2,7 @@
  * Sniper
  * Failed Opening Range / Failed Breakout Playbook
  *
- * Version: 1.1
- *
- * Stop uses max(structural extreme buffer, 25% of OR height) so
- * min-risk distance can pass when the fail print is tight to the extreme.
- * Target = 1.6 × risk for min RR.
+ * Version: 1.2 — target 2.1× risk for min R:R 2.0
  */
 
 import { Candle } from "../core/BDKClient.js";
@@ -100,15 +96,13 @@ export class FailedOpeningRangeBreakout
                     0.01
                 );
 
-            // Structural stop beyond excursion, but at least 25% of OR height
             const minStopDist =
-                Math.max(rangeHeight * 0.25, entry * 0.0015, 0.50);
+                Math.max(rangeHeight * 0.25, entry * 0.0015, 0.25);
 
             let stop: number;
 
             if (openingRange.direction === "BEARISH") {
 
-                // Fade failed upside breakout
                 stop =
                     Math.max(
 
@@ -138,9 +132,9 @@ export class FailedOpeningRangeBreakout
 
                 openingRange.direction === "BEARISH"
 
-                    ? entry - riskDist * 1.6
+                    ? entry - riskDist * 2.1
 
-                    : entry + riskDist * 1.6;
+                    : entry + riskDist * 2.1;
 
             trade =
                 this.risk.evaluateTrade(
@@ -161,7 +155,7 @@ export class FailedOpeningRangeBreakout
 
         const qualified =
             structureOk &&
-            (confirmation.confirmed || trade.riskReward >= 1.5);
+            (confirmation.confirmed || trade.riskReward >= 2.0);
 
         const score =
             this.score.evaluate({

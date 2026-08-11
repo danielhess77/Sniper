@@ -2,11 +2,7 @@
  * Sniper
  * Opening Range Breakout Playbook
  *
- * Version: 3.3
- *
- * Risk geometry: stop = opposite OR side; target = 1.6 × risk
- * so breakouts near the OR edge still clear min R:R 1.5.
- * (Old measured-move = 1× OR height → RR ≈ 1.0 when entry ≈ high.)
+ * Version: 3.4 — target 2.1× risk for min R:R 2.0
  */
 
 import { Candle } from "../core/BDKClient.js";
@@ -98,14 +94,13 @@ implements Playbook<OpeningRangeBreakoutResult> {
             const riskDist =
                 Math.abs(entry - stop);
 
-            // 1.6R target so geometry always clears min RR 1.5 when risk is valid
             const target =
 
                 openingRange.direction === "BULLISH"
 
-                    ? entry + riskDist * 1.6
+                    ? entry + riskDist * 2.1
 
-                    : entry - riskDist * 1.6;
+                    : entry - riskDist * 2.1;
 
             trade =
                 this.risk.evaluateTrade(
@@ -126,7 +121,7 @@ implements Playbook<OpeningRangeBreakoutResult> {
 
         const qualified =
             structureOk &&
-            (confirmation.confirmed || trade.riskReward >= 1.5);
+            (confirmation.confirmed || trade.riskReward >= 2.0);
 
         const score =
             this.score.evaluate({
