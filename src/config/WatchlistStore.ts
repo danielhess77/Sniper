@@ -2,10 +2,10 @@
  * Sniper
  * Watchlist Store
  *
- * Version: 1.0
+ * Version: 1.1
  *
- * Loads / saves the live watchlist from data/watchlist.json.
- * Falls back to DEFAULT_SYMBOLS if the file is missing.
+ * Live list: data/watchlist.json (gitignored — UI saves survive git pull)
+ * Seed: data/watchlist.default.json or built-in DEFAULT_SYMBOLS
  */
 
 import fs from "fs";
@@ -31,7 +31,6 @@ const DEFAULT_SYMBOLS: string[] = [
     "AMZN",
     "DIS",
     "NKE",
-    "MCD",
     "COST",
     "HOOD",
     "PYPL",
@@ -47,13 +46,26 @@ const DEFAULT_SYMBOLS: string[] = [
     "XBI",
     "PFE",
     "ABBV",
-    "RGTI"
+    "RGTI",
+    "IWM"
 
 ];
 
-function filePath(): string {
+function dataDir(): string {
 
-    return path.join(process.cwd(), "data", "watchlist.json");
+    return path.join(process.cwd(), "data");
+
+}
+
+function livePath(): string {
+
+    return path.join(dataDir(), "watchlist.json");
+
+}
+
+function defaultPath(): string {
+
+    return path.join(dataDir(), "watchlist.default.json");
 
 }
 
@@ -110,6 +122,28 @@ export function normalizeSymbols(
 
 }
 
+function readSymbolsFile(fp: string): string[] | null {
+
+    try {
+
+        if (!fs.existsSync(fp)) return null;
+
+        const raw = fs.readFileSync(fp, "utf8");
+
+        const parsed = JSON.parse(raw) as { symbols?: unknown };
+
+        const normalized = normalizeSymbols(parsed.symbols);
+
+        return normalized.length ? normalized : null;
+
+    } catch {
+
+        return null;
+
+    }
+
+}
+
 export class WatchlistStore {
 
     private symbols: string[] = [...DEFAULT_SYMBOLS];
@@ -118,31 +152,24 @@ export class WatchlistStore {
 
         try {
 
-            const fp = filePath();
+            // 1) Live UI file (gitignored)
+            const live = readSymbolsFile(livePath());
 
-            if (!fs.existsSync(fp)) {
+            if (live) {
 
-                this.symbols = [...DEFAULT_SYMBOLS];
-
-                this.save(this.symbols);
+                this.symbols = live;
 
                 return this.get();
 
             }
 
-            const raw =
-                fs.readFileSync(fp, "utf8");
+            // 2) Seed from default template in repo
+            const seeded = readSymbolsFile(defaultPath());
 
-            const parsed =
-                JSON.parse(raw) as { symbols?: unknown };
+            this.symbols = seeded ?? [...DEFAULT_SYMBOLS];
 
-            const normalized =
-                normalizeSymbols(parsed.symbols);
-
-            this.symbols =
-                normalized.length
-                    ? normalized
-                    : [...DEFAULT_SYMBOLS];
+            // Create live file so next save / restart is stable
+            this.writeLive(this.symbols);
 
         } catch (err) {
 
@@ -168,6 +195,23 @@ export class WatchlistStore {
 
     }
 
+    private writeLive(symbols: string[]): void {
+
+        const dir = dataDir();
+
+        if (!fs.existsSync(dir)) {
+
+            fs.mkdirSync(dir, { recursive: true });
+
+        }
+
+        const payload =
+            JSON.stringify({ symbols }, null, 2) + "\n";
+
+        fs.writeFileSync(livePath(), payload, "utf8");
+
+    }
+
     save(
 
         input: unknown
@@ -189,21 +233,11 @@ export class WatchlistStore {
 
         }
 
-        const dir =
-            path.join(process.cwd(), "data");
-
-        if (!fs.existsSync(dir)) {
-
-            fs.mkdirSync(dir, { recursive: true });
-
-        }
-
-        const payload =
-            JSON.stringify({ symbols: normalized }, null, 2) + "\n";
-
-        fs.writeFileSync(filePath(), payload, "utf8");
+        this.writeLive(normalized);
 
         this.symbols = normalized;
+
+        console.log(`Watchlist saved (${normalized.length} symbols) → data/watchlist.json`);
 
         return this.get();
 
