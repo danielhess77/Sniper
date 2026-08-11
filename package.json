@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "tsx src/main.ts",
-    "build": "tsc"
+    "build": "tsc",
+    "api": "tsx src/server/Server.ts",
+    "api:bg": "bash scripts/start-api.sh"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",
