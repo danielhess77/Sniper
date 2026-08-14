@@ -2,7 +2,12 @@
  * Sniper
  * Opening Range Breakout Playbook
  *
- * Version: 3.4 — target 2.1× risk for min R:R 2.0
+ * Version: 4.0 — lean stack
+ *
+ * - Signal only 10:00–11:00 ET (engine)
+ * - Close outside OR + hold bar (engine)
+ * - Min OR height (engine)
+ * - Target = 1× OR height, capped at 1.5R; min R:R 1.0 for ORB only
  */
 
 import { Candle } from "../core/BDKClient.js";
@@ -78,7 +83,11 @@ implements Playbook<OpeningRangeBreakoutResult> {
         let trade =
             this.risk.evaluateTrade(0, 0, 0);
 
-        if (openingRange.direction !== "NONE" && openingRange.breakoutIndex >= 0) {
+        if (
+            openingRange.direction !== "NONE" &&
+            openingRange.breakoutIndex >= 0 &&
+            openingRange.orHeight > 0
+        ) {
 
             const entry =
                 openingRange.breakoutPrice;
@@ -92,16 +101,24 @@ implements Playbook<OpeningRangeBreakoutResult> {
                     : openingRange.high;
 
             const riskDist =
-                Math.abs(entry - stop);
+                Math.max(Math.abs(entry - stop), 1e-6);
+
+            // 1× OR height, capped at 1.5R from structural risk
+            const move =
+                Math.min(
+                    openingRange.orHeight,
+                    riskDist * 1.5
+                );
 
             const target =
 
                 openingRange.direction === "BULLISH"
 
-                    ? entry + riskDist * 2.1
+                    ? entry + move
 
-                    : entry - riskDist * 2.1;
+                    : entry - move;
 
+            // ORB allows 1.0R minimum (not global 2.0)
             trade =
                 this.risk.evaluateTrade(
 
@@ -109,7 +126,9 @@ implements Playbook<OpeningRangeBreakoutResult> {
 
                     stop,
 
-                    target
+                    target,
+
+                    { minRiskReward: 1.0 }
 
                 );
 
@@ -117,18 +136,19 @@ implements Playbook<OpeningRangeBreakoutResult> {
 
         const structureOk =
             openingRange.direction !== "NONE" &&
-            trade.valid;
+            trade.valid &&
+            trade.riskReward >= 1.0;
 
+        // Require real hold structure; pattern confirm is a bonus not a bypass
         const qualified =
-            structureOk &&
-            (confirmation.confirmed || trade.riskReward >= 2.0);
+            structureOk;
 
         const score =
             this.score.evaluate({
 
-                trend: 30,
+                trend: 28,
 
-                playbook: 25,
+                playbook: 28,
 
                 confirmation:
                     confirmation.confirmed
@@ -137,7 +157,7 @@ implements Playbook<OpeningRangeBreakoutResult> {
 
                         : structureOk
 
-                            ? 12
+                            ? 14
 
                             : 0,
 
@@ -239,6 +259,41 @@ implements Playbook<OpeningRangeBreakoutResult> {
 
         }
 
+        // Invalidate if price re-enters OR (failed breakout territory)
+        if (
+
+            result.openingRange.direction === "BULLISH" &&
+            last.close < result.openingRange.high
+
+        ) {
+
+            return {
+
+                active: false,
+
+                reason: "Re-entered OR (failed hold)"
+
+            };
+
+        }
+
+        if (
+
+            result.openingRange.direction === "BEARISH" &&
+            last.close > result.openingRange.low
+
+        ) {
+
+            return {
+
+                active: false,
+
+                reason: "Re-entered OR (failed hold)"
+
+            };
+
+        }
+
         return {
 
             active: true,
@@ -275,7 +330,7 @@ implements Playbook<OpeningRangeBreakoutResult> {
 
             result.qualified
 
-                ? "Qualified setup"
+                ? "Qualified ORB (held breakout)"
 
                 : "Setup not qualified"
 
@@ -289,9 +344,10 @@ implements Playbook<OpeningRangeBreakoutResult> {
 
             result.qualified
 
-                ? "Opening Range Breakout"
+                ? "10:00–11:00 · hold bar · min OR · 1×OR target"
 
-                : "Requirements not fully met"
+                : (result.openingRange.rejectReason ||
+                    "Requirements not fully met")
 
         );
 
