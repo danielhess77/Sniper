@@ -24,6 +24,36 @@ import type {
 type TabId = "intraday" | "swing" | "rvol" | "watchlist" | "journal";
 type SwingFilter = "ALL" | "SHORT" | "INTERMEDIATE";
 
+/** Minutes since midnight America/New_York */
+function etMinutesSinceMidnight(): number {
+    const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone: "America/New_York",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false
+    }).formatToParts(new Date());
+    const hour = Number(parts.find(p => p.type === "hour")?.value ?? "0");
+    const minute = Number(parts.find(p => p.type === "minute")?.value ?? "0");
+    return (hour % 24) * 60 + minute;
+}
+
+/**
+ * Intraday poll cadence (ET):
+ * 9:30–10:30 → 2 min (open / OR window)
+ * otherwise → 5 min
+ */
+function intradayScanIntervalMs(): number {
+    const m = etMinutesSinceMidnight();
+    const openStart = 9 * 60 + 30;
+    const openEnd = 10 * 60 + 30;
+    if (m >= openStart && m < openEnd) return 2 * 60_000;
+    return 5 * 60_000;
+}
+
+function intradayScanIntervalLabel(): string {
+    return intradayScanIntervalMs() === 2 * 60_000 ? "2 min (open)" : "5 min";
+}
+
 function formatVolume(n: number): string {
     if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
     if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K`;
@@ -116,6 +146,7 @@ function App() {
     const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([]);
     const [journalSummary, setJournalSummary] = useState<JournalSummary | null>(null);
     const [journalBusy, setJournalBusy] = useState(false);
+    const [scanRefreshLabel, setScanRefreshLabel] = useState(intradayScanIntervalLabel);
 
     async function refreshScan() {
         try {
@@ -227,16 +258,33 @@ function App() {
     }
 
     useEffect(() => {
+        let cancelled = false;
+        let scanTimer: ReturnType<typeof setTimeout> | undefined;
+
         refreshScan();
         refreshSwing();
         refreshRvol();
         refreshWatchlist();
         refreshJournal();
-        const scanTimer = setInterval(refreshScan, 60_000);
+
+        const scheduleScan = () => {
+            if (cancelled) return;
+            const ms = intradayScanIntervalMs();
+            setScanRefreshLabel(intradayScanIntervalLabel());
+            scanTimer = setTimeout(async () => {
+                if (cancelled) return;
+                await refreshScan();
+                scheduleScan();
+            }, ms);
+        };
+        scheduleScan();
+
         const swingTimer = setInterval(refreshSwing, 5 * 60_000);
         const rvolTimer = setInterval(refreshRvol, 30 * 60_000);
+
         return () => {
-            clearInterval(scanTimer);
+            cancelled = true;
+            if (scanTimer) clearTimeout(scanTimer);
             clearInterval(swingTimer);
             clearInterval(rvolTimer);
         };
@@ -374,7 +422,7 @@ function App() {
                             {tab === "rvol" ? "30 min"
                                 : tab === "swing" ? "5 min"
                                     : tab === "watchlist" || tab === "journal" ? "manual"
-                                        : "60 sec"}
+                                        : scanRefreshLabel}
                         </strong>
                     </div>
                 </div>
