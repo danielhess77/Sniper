@@ -2,10 +2,10 @@
  * Sniper
  * Scanner
  *
- * Version: 2.14
+ * Version: 2.15
  *
  * Quality board filters:
- * - min R:R 2.0 (RiskEngine default)
+ * - min R:R 2.0 (default); Opening Range Breakout allowed at 1.0
  * - min score 80
  * - freshness: signal within last 30 minutes
  * - best playbook per symbol only
@@ -27,6 +27,23 @@ const FRESHNESS_MINUTES = 30;
 const MIN_SCORE = 80;
 
 const MIN_RR = 2.0;
+
+/** ORB uses 1× OR targets — lower board floor for that playbook only */
+const MIN_RR_ORB = 1.0;
+
+function minRrForCard(card: ScanCard): number {
+
+    const pb = (card.playbook || "").toLowerCase();
+
+    if (pb.includes("opening range breakout")) {
+
+        return MIN_RR_ORB;
+
+    }
+
+    return MIN_RR;
+
+}
 
 function formatEtClock(ms: number): string {
 
@@ -248,7 +265,9 @@ export class Scanner {
 
             `Clock: ${clockDay} ET | sessionMinute=${sessMin} | ` +
 
-            `filters: score≥${MIN_SCORE} RR≥${MIN_RR} fresh≤${FRESHNESS_MINUTES}m best/symbol`
+            `filters: score≥${MIN_SCORE} RR≥${MIN_RR} (ORB≥${MIN_RR_ORB}) ` +
+
+            `fresh≤${FRESHNESS_MINUTES}m best/symbol`
 
         );
         console.log("========================================");
@@ -393,7 +412,7 @@ export class Scanner {
                     if (
 
                         !validation.active &&
-                        /stop|broke or low|broke or high|re-broke/i.test(
+                        /stop|broke or low|broke or high|re-broke|re-entered/i.test(
                             validation.reason
                         )
 
@@ -458,7 +477,7 @@ export class Scanner {
 
             c.qualified &&
             (c.score ?? 0) >= MIN_SCORE &&
-            (c.riskReward ?? 0) >= MIN_RR
+            (c.riskReward ?? 0) >= minRrForCard(c)
 
         );
 
