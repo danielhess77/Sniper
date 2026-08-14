@@ -24,6 +24,18 @@ import type {
 type TabId = "intraday" | "swing" | "rvol" | "watchlist" | "journal";
 type SwingFilter = "ALL" | "SHORT" | "INTERMEDIATE";
 
+interface JournalDayGroup {
+    dayKey: string;
+    label: string;
+    entries: JournalEntry[];
+    n: number;
+    resolved: number;
+    wins: number;
+    winRate: number | null;
+    avgR: number | null;
+    open: number;
+}
+
 /** Minutes since midnight America/New_York */
 function etMinutesSinceMidnight(): number {
     const parts = new Intl.DateTimeFormat("en-US", {
@@ -37,11 +49,6 @@ function etMinutesSinceMidnight(): number {
     return (hour % 24) * 60 + minute;
 }
 
-/**
- * Intraday poll cadence (ET):
- * 9:30–10:30 → 2 min (open / OR window)
- * otherwise → 5 min
- */
 function intradayScanIntervalMs(): number {
     const m = etMinutesSinceMidnight();
     const openStart = 9 * 60 + 30;
@@ -97,6 +104,68 @@ function formatEtStamp(iso: string | null | undefined, withTime = true): string 
     });
 }
 
+/** Prefer sessionDate; fall back to loggedAt ET calendar day YYYY-MM-DD */
+function tradingDayKey(e: JournalEntry): string {
+    if (e.sessionDate && /^\d{4}-\d{2}-\d{2}/.test(e.sessionDate)) {
+        return e.sessionDate.slice(0, 10);
+    }
+    const d = new Date(e.loggedAt);
+    if (Number.isNaN(d.getTime())) return "unknown";
+    const parts = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "America/New_York",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit"
+    }).formatToParts(d);
+    const y = parts.find(p => p.type === "year")?.value ?? "0000";
+    const m = parts.find(p => p.type === "month")?.value ?? "00";
+    const day = parts.find(p => p.type === "day")?.value ?? "00";
+    return `${y}-${m}-${day}`;
+}
+
+function tradingDayLabel(dayKey: string): string {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dayKey)) return dayKey;
+    const d = new Date(`${dayKey}T16:00:00.000Z`);
+    return d.toLocaleDateString("en-US", {
+        timeZone: "America/New_York",
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        year: "numeric"
+    });
+}
+
+function buildJournalDays(entries: JournalEntry[]): JournalDayGroup[] {
+    const map = new Map<string, JournalEntry[]>();
+    for (const e of entries) {
+        const k = tradingDayKey(e);
+        const list = map.get(k) ?? [];
+        list.push(e);
+        map.set(k, list);
+    }
+    const days: JournalDayGroup[] = [];
+    for (const [dayKey, list] of map) {
+        const resolved = list.filter(e => e.outcome !== "open" && e.rMultiple !== null);
+        const wins = resolved.filter(e => (e.rMultiple ?? 0) > 0).length;
+        const rs = resolved.map(e => e.rMultiple as number);
+        const avgR = rs.length ? rs.reduce((a, b) => a + b, 0) / rs.length : null;
+        const winRate = resolved.length ? wins / resolved.length : null;
+        days.push({
+            dayKey,
+            label: tradingDayLabel(dayKey),
+            entries: list,
+            n: list.length,
+            resolved: resolved.length,
+            wins,
+            winRate,
+            avgR,
+            open: list.filter(e => e.outcome === "open").length
+        });
+    }
+    days.sort((a, b) => b.dayKey.localeCompare(a.dayKey));
+    return days;
+}
+
 function OptionBlock({ option }: { option: OptionSuggestion }) {
     return (
         <>
@@ -147,6 +216,7 @@ function App() {
     const [journalSummary, setJournalSummary] = useState<JournalSummary | null>(null);
     const [journalBusy, setJournalBusy] = useState(false);
     const [scanRefreshLabel, setScanRefreshLabel] = useState(intradayScanIntervalLabel);
+    const [expandedDays, setExpandedDays] = useState<Record<string, boolean>>({});
 
     async function refreshScan() {
         try {
@@ -290,6 +360,26 @@ function App() {
         };
     }, []);
 
+    const journalDays = useMemo(
+        () => buildJournalDays(journalEntries),
+        [journalEntries]
+    );
+
+    useEffect(() => {
+        if (!journalDays.length) return;
+        setExpandedDays(prev => {
+            if (Object.keys(prev).length > 0) return prev;
+            return { [journalDays[0].dayKey]: true };
+        });
+    }, [journalDays]);
+
+    function toggleDay(dayKey: string) {
+        setExpandedDays(prev => ({
+            ...prev,
+            [dayKey]: !prev[dayKey]
+        }));
+    }
+
     const filteredSwing = useMemo(() => {
         let rows = swingResults.filter(r => r.state !== "invalid");
         if (swingFilter === "ALL") return rows;
@@ -347,7 +437,7 @@ function App() {
         tab === "intraday" ? "Institutional Intraday Scanner"
             : tab === "swing" ? "RS + Pullback / Tight Base Swings"
                 : tab === "rvol" ? "Opening + Day Relative Volume"
-                    : tab === "journal" ? "Qualified Signal Journal & Performance"
+                    : tab === "journal" ? "Journal by trading day"
                         : "Watchlist Editor";
 
     function renderRvolTable(rows: RvolCard[], showQuoteCols: boolean) {
@@ -388,6 +478,44 @@ function App() {
         );
     }
 
+    function renderJournalDayRows(entries: JournalEntry[]) {
+        return entries.map(e => (
+            <tr key={e.id}>
+                <td title={e.loggedAt}>{formatEtStamp(e.loggedAt)}</td>
+                <td>{e.scope}</td>
+                <td>{e.symbol}</td>
+                <td>{e.playbook}</td>
+                <td>{e.direction}</td>
+                <td>{e.entry.toFixed(2)}</td>
+                <td>
+                    <span className={e.outcome === "target" ? "badge badge-qualified" : "badge badge-state"}>
+                        {e.outcome}
+                    </span>
+                </td>
+                <td style={{ color: (e.rMultiple ?? 0) >= 0 ? "#31d07d" : "#ff5d73" }}>
+                    {e.rMultiple === null ? "—" : fmtR(e.rMultiple)}
+                </td>
+                <td>
+                    <select
+                        value={e.taken}
+                        onChange={ev => setTaken(e.id, ev.target.value as TakenStatus)}
+                        style={{
+                            background: "#121a2b",
+                            color: "#e8eefc",
+                            border: "1px solid #283852",
+                            borderRadius: 6,
+                            padding: "4px 6px"
+                        }}
+                    >
+                        <option value="unknown">?</option>
+                        <option value="yes">Yes</option>
+                        <option value="no">No</option>
+                    </select>
+                </td>
+            </tr>
+        ));
+    }
+
     return (
         <div className="app">
             <header className="header">
@@ -405,14 +533,14 @@ function App() {
                             {tab === "rvol" ? "Last RVOL"
                                 : tab === "swing" ? "Last Scan"
                                     : tab === "watchlist" ? "Symbols"
-                                        : tab === "journal" ? "Entries"
+                                        : tab === "journal" ? "Days"
                                             : "Last Scan"}
                         </span>
                         <strong>
                             {tab === "rvol" ? lastRvol || "--"
                                 : tab === "swing" ? lastSwing || "--"
                                     : tab === "watchlist" ? symbols.length
-                                        : tab === "journal" ? journalEntries.length
+                                        : tab === "journal" ? journalDays.length
                                             : lastScan || "--"}
                         </strong>
                     </div>
@@ -614,67 +742,63 @@ function App() {
                             {journalBusy ? "Resolving…" : "Resolve open vs price"}
                         </button>
                     </div>
-                    <section className="content">
-                        <div className="tablePanel" style={{ width: "100%" }}>
-                            <div className="panelHeader">Qualified signals (auto-logged)</div>
-                            {!journalEntries.length ? (
-                                <div className="rvolEmpty">No journal entries yet — run scans; qualified setups log automatically.</div>
-                            ) : (
-                                <table>
-                                    <thead>
-                                        <tr>
-                                            <th>Logged</th>
-                                            <th>Scope</th>
-                                            <th>Symbol</th>
-                                            <th>Playbook</th>
-                                            <th>Dir</th>
-                                            <th>Entry</th>
-                                            <th>Outcome</th>
-                                            <th>R</th>
-                                            <th>Taken</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {journalEntries.map(e => (
-                                            <tr key={e.id}>
-                                                <td title={e.loggedAt}>{formatEtStamp(e.loggedAt)}</td>
-                                                <td>{e.scope}</td>
-                                                <td>{e.symbol}</td>
-                                                <td>{e.playbook}</td>
-                                                <td>{e.direction}</td>
-                                                <td>{e.entry.toFixed(2)}</td>
-                                                <td>
-                                                    <span className={e.outcome === "target" ? "badge badge-qualified" : "badge badge-state"}>
-                                                        {e.outcome}
-                                                    </span>
-                                                </td>
-                                                <td style={{ color: (e.rMultiple ?? 0) >= 0 ? "#31d07d" : "#ff5d73" }}>
-                                                    {e.rMultiple === null ? "—" : fmtR(e.rMultiple)}
-                                                </td>
-                                                <td>
-                                                    <select
-                                                        value={e.taken}
-                                                        onChange={ev => setTaken(e.id, ev.target.value as TakenStatus)}
-                                                        style={{
-                                                            background: "#121a2b",
-                                                            color: "#e8eefc",
-                                                            border: "1px solid #283852",
-                                                            borderRadius: 6,
-                                                            padding: "4px 6px"
-                                                        }}
-                                                    >
-                                                        <option value="unknown">?</option>
-                                                        <option value="yes">Yes</option>
-                                                        <option value="no">No</option>
-                                                    </select>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            )}
+
+                    {!journalEntries.length ? (
+                        <div className="rvolEmpty" style={{ background: "#151f32", border: "1px solid #283852", borderRadius: 14 }}>
+                            No journal entries yet — run scans; qualified setups log automatically.
                         </div>
-                    </section>
+                    ) : (
+                        <div className="journalDays">
+                            {journalDays.map(day => {
+                                const open = !!expandedDays[day.dayKey];
+                                return (
+                                    <div className="dayGroup" key={day.dayKey}>
+                                        <button
+                                            type="button"
+                                            className="dayHeader"
+                                            onClick={() => toggleDay(day.dayKey)}
+                                        >
+                                            <div className="dayTitle">
+                                                <span className="dayChevron">{open ? "▼" : "▶"}</span>
+                                                <span>{day.label}</span>
+                                            </div>
+                                            <div className="dayStats">
+                                                <span>N <strong>{day.n}</strong></span>
+                                                <span>Resolved <strong>{day.resolved}</strong></span>
+                                                <span>Wins <strong>{day.wins}</strong></span>
+                                                <span>Win% <strong>{fmtPct(day.winRate)}</strong></span>
+                                                <span>Avg R <strong style={{ color: (day.avgR ?? 0) >= 0 ? "#31d07d" : "#ff5d73" }}>{fmtR(day.avgR)}</strong></span>
+                                                {day.open > 0 && <span>Open <strong>{day.open}</strong></span>}
+                                            </div>
+                                        </button>
+                                        {open && (
+                                            <div className="dayBody">
+                                                <table>
+                                                    <thead>
+                                                        <tr>
+                                                            <th>Logged</th>
+                                                            <th>Scope</th>
+                                                            <th>Symbol</th>
+                                                            <th>Playbook</th>
+                                                            <th>Dir</th>
+                                                            <th>Entry</th>
+                                                            <th>Outcome</th>
+                                                            <th>R</th>
+                                                            <th>Taken</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {renderJournalDayRows(day.entries)}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+
                     {journalSummary && journalSummary.byPlaybook.length > 0 && (
                         <section className="rvolPanel" style={{ marginTop: 24 }}>
                             <div className="panelHeader">By playbook (resolved)</div>
