@@ -463,6 +463,116 @@ tbody tr:hover {
 
 }
 
+/* Journal by trading day */
+
+.journalDays {
+
+    display: flex;
+
+    flex-direction: column;
+
+    gap: 12px;
+
+}
+
+.dayGroup {
+
+    background: var(--panel);
+
+    border: 1px solid var(--border);
+
+    border-radius: var(--radius);
+
+    overflow: hidden;
+
+}
+
+.dayHeader {
+
+    width: 100%;
+
+    display: flex;
+
+    justify-content: space-between;
+
+    align-items: center;
+
+    gap: 12px;
+
+    flex-wrap: wrap;
+
+    background: var(--panel2);
+
+    border: none;
+
+    color: var(--text);
+
+    padding: 14px 18px;
+
+    cursor: pointer;
+
+    text-align: left;
+
+    font: inherit;
+
+}
+
+.dayHeader:hover {
+
+    background: rgba(79, 163, 255, 0.12);
+
+}
+
+.dayTitle {
+
+    display: flex;
+
+    align-items: center;
+
+    gap: 10px;
+
+    font-weight: 700;
+
+}
+
+.dayChevron {
+
+    color: var(--muted);
+
+    font-size: 12px;
+
+    width: 14px;
+
+}
+
+.dayStats {
+
+    display: flex;
+
+    flex-wrap: wrap;
+
+    gap: 14px;
+
+    color: var(--muted);
+
+    font-size: 13px;
+
+}
+
+.dayStats strong {
+
+    color: var(--text);
+
+    font-weight: 600;
+
+}
+
+.dayBody table tbody tr:hover {
+
+    cursor: default;
+
+}
+
 /* Watchlist editor */
 
 .watchlistPanel {
