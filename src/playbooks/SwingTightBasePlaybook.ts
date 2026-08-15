@@ -2,9 +2,10 @@
  * Sniper
  * Swing Tight Base Breakout Playbook
  *
- * Version: 1.0
+ * Version: 1.1
  *
  * Trend + top-30% RS + compressed base → close above base high.
+ * ATR contraction gate (ATR7 < ATR20) required to qualify breakouts.
  * Longs only. Target capped by 2.5 × ATR (horizon config).
  */
 
@@ -12,6 +13,10 @@ import { Candle } from "../core/BDKClient.js";
 import { SwingHorizonConfig } from "../config/SwingHorizons.js";
 import { SwingTrendEngine, SwingTrendResult } from "../engines/SwingTrendEngine.js";
 import { TightBaseEngine, TightBaseResult } from "../engines/TightBaseEngine.js";
+import {
+    AtrContractionEngine,
+    AtrContractionResult
+} from "../engines/AtrContractionEngine.js";
 import { RiskEngine, RiskResult } from "../engines/RiskEngine.js";
 import { RsCard } from "../engines/RelativeStrengthEngine.js";
 import { DecisionTrace } from "../types/DecisionTrace.js";
@@ -36,6 +41,8 @@ export interface SwingTightBaseResult {
 
     base: TightBaseResult;
 
+    contraction: AtrContractionResult;
+
     risk: RiskResult;
 
     rsRank: number;
@@ -57,6 +64,9 @@ export class SwingTightBasePlaybook {
 
     private baseEngine =
         new TightBaseEngine();
+
+    private contractionEngine =
+        new AtrContractionEngine();
 
     private riskEngine =
         new RiskEngine();
@@ -94,6 +104,9 @@ export class SwingTightBasePlaybook {
         const base =
             this.baseEngine.evaluate(dailyCandles);
 
+        const contraction =
+            this.contractionEngine.evaluate(dailyCandles);
+
         const atr = base.atr;
 
         const pack = (
@@ -121,6 +134,8 @@ export class SwingTightBasePlaybook {
             trend,
 
             base,
+
+            contraction,
 
             risk,
 
@@ -156,7 +171,7 @@ export class SwingTightBasePlaybook {
 
                 noneRisk,
 
-                this.score(trend, base, noneRisk, rs, false)
+                this.score(trend, base, contraction, noneRisk, rs, false)
 
             );
 
@@ -170,7 +185,7 @@ export class SwingTightBasePlaybook {
 
                 noneRisk,
 
-                this.score(trend, base, noneRisk, rs, false)
+                this.score(trend, base, contraction, noneRisk, rs, false)
 
             );
 
@@ -180,7 +195,6 @@ export class SwingTightBasePlaybook {
 
         const stop = base.baseLow;
 
-        // Measured move from base height; cap with ATR multiple
         const measured =
             entry + base.baseHeight;
 
@@ -223,7 +237,22 @@ export class SwingTightBasePlaybook {
 
                 risk,
 
-                this.score(trend, base, risk, rs, true)
+                this.score(trend, base, contraction, risk, rs, true)
+
+            );
+
+        }
+
+        // Breakout without coil → triggered only (not qualified)
+        if (!contraction.contracting) {
+
+            return pack(
+
+                "triggered",
+
+                risk,
+
+                this.score(trend, base, contraction, risk, rs, true)
 
             );
 
@@ -235,7 +264,7 @@ export class SwingTightBasePlaybook {
 
             risk,
 
-            this.score(trend, base, risk, rs, true)
+            this.score(trend, base, contraction, risk, rs, true)
 
         );
 
@@ -246,6 +275,8 @@ export class SwingTightBasePlaybook {
         trend: SwingTrendResult,
 
         base: TightBaseResult,
+
+        contraction: AtrContractionResult,
 
         risk: RiskResult,
 
@@ -265,35 +296,43 @@ export class SwingTightBasePlaybook {
 
         }
 
-        total += Math.round((rs.percentile / 100) * 25);
+        total += Math.round((rs.percentile / 100) * 22);
 
         if (base.hasBase) {
 
             total += 10;
 
-            if (base.compression <= 1.0) total += 10;
+            if (base.compression <= 1.0) total += 8;
 
-            else if (base.compression <= 1.2) total += 6;
+            else if (base.compression <= 1.2) total += 5;
 
-            if (base.baseBars >= 8) total += 4;
+            if (base.baseBars >= 8) total += 3;
+
+        }
+
+        if (contraction.contracting) {
+
+            total += 10;
+
+            if (contraction.ratio > 0 && contraction.ratio <= 0.85) total += 3;
 
         }
 
         if (triggered && base.triggered) {
 
-            total += 15;
+            total += 12;
 
         }
 
         if (risk.valid) {
 
-            if (risk.riskReward >= 2.5) total += 15;
+            if (risk.riskReward >= 2.5) total += 12;
 
-            else if (risk.riskReward >= 2.0) total += 12;
+            else if (risk.riskReward >= 2.0) total += 10;
 
-            else if (risk.riskReward >= 1.5) total += 8;
+            else if (risk.riskReward >= 1.5) total += 6;
 
-            else total += 4;
+            else total += 3;
 
         }
 
@@ -351,6 +390,22 @@ export class SwingTightBasePlaybook {
 
         this.traceEngine.add(
 
+            "ATR Contraction",
+
+            result.contraction.contracting,
+
+            result.contraction.ratio > 0
+
+                ? `${result.contraction.ratio.toFixed(2)}×`
+
+                : "—",
+
+            result.contraction.reason
+
+        );
+
+        this.traceEngine.add(
+
             "Breakout",
 
             result.base.triggered,
@@ -395,7 +450,15 @@ export class SwingTightBasePlaybook {
 
             result.state,
 
-            result.qualified ? "Qualified tight-base breakout" : "Not qualified"
+            result.qualified
+
+                ? "Qualified tight-base breakout (coiled)"
+
+                : result.base.triggered && !result.contraction.contracting
+
+                    ? "Breakout without ATR coil — not qualified"
+
+                    : "Not qualified"
 
         );
 
