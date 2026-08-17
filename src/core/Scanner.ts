@@ -2,11 +2,11 @@
  * Sniper
  * Scanner
  *
- * Version: 2.15
+ * Version: 2.16
  *
  * Quality board filters:
  * - min R:R 2.0 (default); Opening Range Breakout allowed at 1.0
- * - min score 80
+ * - min score 85
  * - freshness: signal within last 30 minutes
  * - best playbook per symbol only
  */
@@ -24,7 +24,7 @@ export type ScanResult = ScanCard;
 /** Keep setups whose signal time is within this many minutes */
 const FRESHNESS_MINUTES = 30;
 
-const MIN_SCORE = 80;
+const MIN_SCORE = 85;
 
 const MIN_RR = 2.0;
 
