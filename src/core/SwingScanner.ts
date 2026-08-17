@@ -2,10 +2,14 @@
  * Sniper
  * Swing Scanner
  *
- * Version: 1.4
+ * Version: 1.5
  *
  * SHORT (1–3 day) horizon: daily structure + 30m entry confirm.
  * INTERMEDIATE (1–3 week): daily only.
+ *
+ * Board quality:
+ * - qualified requires score ≥ 80 (else demoted to watching)
+ * - journal path only sees qualified === true
  */
 
 import { BDKClient, Candle } from "./BDKClient.js";
@@ -65,6 +69,9 @@ export interface SwingCard {
     option?: OptionSuggestion | null;
 
 }
+
+/** Board floor for qualified swing setups */
+const MIN_SCORE = 80;
 
 function formatEtDate(ms: number): string {
 
@@ -149,6 +156,7 @@ export class SwingScanner {
         console.log("");
         console.log("========================================");
         console.log(`Swing scan: ${symbols.length} symbols`);
+        console.log(`Filters: qualified score ≥ ${MIN_SCORE}`);
         console.log("========================================");
 
         const spyCandles =
@@ -402,6 +410,36 @@ export class SwingScanner {
 
         }
 
+        // —— Min score floor: weak "qualified" → watching (never journal) ——
+        let demoted = 0;
+
+        for (const card of cards) {
+
+            if (card.qualified && card.score < MIN_SCORE) {
+
+                card.qualified = false;
+
+                card.state = "watching";
+
+                card.reason =
+                    `${card.reason} · score ${card.score} < ${MIN_SCORE} (board floor)`;
+
+                demoted++;
+
+            }
+
+        }
+
+        if (demoted > 0) {
+
+            console.log(
+
+                `Score floor: demoted ${demoted} setup(s) to watching (score < ${MIN_SCORE})`
+
+            );
+
+        }
+
         for (const card of cards) {
 
             if (!card.qualified) continue;
@@ -439,9 +477,13 @@ export class SwingScanner {
 
         });
 
+        const q = cards.filter(c => c.qualified).length;
+
+        const w = cards.filter(c => c.state === "watching").length;
+
         console.log(
 
-            `Swing setups returned: ${cards.length} (qualified: ${cards.filter(c => c.qualified).length})`
+            `Swing setups returned: ${cards.length} (qualified: ${q}, watching: ${w})`
 
         );
 

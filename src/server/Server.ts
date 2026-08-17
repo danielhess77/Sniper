@@ -1,8 +1,9 @@
 /**
- * Sniper Server v2.10
+ * Sniper Server v2.11
  *
  * Express API: scan + swing + RVOL + watchlist + trade journal.
  * Overlapping heavy scans rejected with 429 to protect BDK KV.
+ * Swing journal: only qualified === true (watching never auto-logs).
  */
 
 import express from "express";
@@ -27,6 +28,9 @@ import { VWAPReclaim } from "../playbooks/VWAPReclaim.js";
 import { FirstPullback } from "../playbooks/FirstPullback.js";
 
 const PORT = Number(process.env.PORT) || 3000;
+
+/** Mirror swing board floor — never journal below this */
+const SWING_JOURNAL_MIN_SCORE = 80;
 
 process.on("uncaughtException", (err) => {
     console.error("[Sniper] uncaughtException:", err);
@@ -292,9 +296,14 @@ function start(): void {
                 const list = watchlistStore.get();
                 const results = await swingScanner.scan(list);
 
+                // Auto-log ONLY true qualifies (never watching / triggered / low score)
                 let logged = 0;
                 for (const r of results) {
                     if (!r.qualified) continue;
+                    if (r.state !== "qualified") continue;
+                    if ((r.score ?? 0) < SWING_JOURNAL_MIN_SCORE) continue;
+                    if (r.entry <= 0 || r.stop <= 0) continue;
+
                     const created = journalStore.logQualified({
                         scope: "swing",
                         symbol: r.symbol,
@@ -327,6 +336,7 @@ function start(): void {
                     qualified: results.filter(r => r.qualified).length,
                     watching: results.filter(r => r.state === "watching").length,
                     journalLogged: logged,
+                    minScore: SWING_JOURNAL_MIN_SCORE,
                     results
                 });
             } catch (error) {
@@ -359,7 +369,7 @@ function start(): void {
         const server: Server = app.listen(PORT, "0.0.0.0", () => {
             console.log("");
             console.log("====================================");
-            console.log("        SNIPER API v2.10");
+            console.log("        SNIPER API v2.11");
             console.log("====================================");
             console.log(`PID       : ${process.pid}`);
             console.log(`Listening : http://0.0.0.0:${PORT}`);
@@ -372,6 +382,7 @@ function start(): void {
             console.log(`Playbooks : ${PLAYBOOKS.length}`);
             console.log(`Journal   : ${journalStore.list().length} entries`);
             console.log("BDK throttle: 400ms min gap · no overlapping scans");
+            console.log(`Swing journal: qualified only · score ≥ ${SWING_JOURNAL_MIN_SCORE}`);
             console.log("Ready for React UI — leave this terminal open");
             console.log("");
         });
