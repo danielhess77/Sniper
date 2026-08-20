@@ -2,9 +2,10 @@
  * Sniper
  * Swing Tight Base Breakout Playbook
  *
- * Version: 1.1
+ * Version: 1.2
  *
  * Trend + top-30% RS + compressed base → close above base high.
+ * hasBase && !triggered is an explicit Consolidation (watching) state.
  * ATR contraction gate (ATR7 < ATR20) required to qualify breakouts.
  * Longs only. Target capped by 2.5 × ATR (horizon config).
  */
@@ -22,6 +23,11 @@ import { RsCard } from "../engines/RelativeStrengthEngine.js";
 import { DecisionTrace } from "../types/DecisionTrace.js";
 import { DecisionTraceEngine } from "../engines/DecisionTraceEngine.js";
 import { SwingState } from "./SwingPlaybook.js";
+
+export type TightBasePhase =
+    | "NONE"
+    | "CONSOLIDATION"
+    | "BREAKOUT";
 
 export interface SwingTightBaseResult {
 
@@ -53,7 +59,10 @@ export interface SwingTightBaseResult {
 
     atr: number;
 
-    setupType: "TIGHT_BASE";
+    /** CONSOLIDATION = tight base, no breakout yet */
+    phase: TightBasePhase;
+
+    setupType: "TIGHT_BASE" | "CONSOLIDATION";
 
 }
 
@@ -115,11 +124,18 @@ export class SwingTightBasePlaybook {
 
             risk: RiskResult,
 
-            score: number
+            score: number,
+
+            phase: TightBasePhase
 
         ): SwingTightBaseResult => ({
 
-            playbook: `${horizon.label} · Tight Base`,
+            playbook:
+                phase === "CONSOLIDATION"
+
+                    ? `${horizon.label} · Consolidation`
+
+                    : `${horizon.label} · Tight Base`,
 
             horizon: horizon.label,
 
@@ -147,19 +163,26 @@ export class SwingTightBasePlaybook {
 
             atr,
 
-            setupType: "TIGHT_BASE"
+            phase,
+
+            setupType:
+                phase === "CONSOLIDATION"
+
+                    ? "CONSOLIDATION"
+
+                    : "TIGHT_BASE"
 
         });
 
         if (!trend.valid) {
 
-            return pack("invalid", noneRisk, 0);
+            return pack("invalid", noneRisk, 0, "NONE");
 
         }
 
         if (!rs || !rs.passesTop30) {
 
-            return pack("invalid", noneRisk, 0);
+            return pack("invalid", noneRisk, 0, "NONE");
 
         }
 
@@ -171,21 +194,53 @@ export class SwingTightBasePlaybook {
 
                 noneRisk,
 
-                this.score(trend, base, contraction, noneRisk, rs, false)
+                this.score(trend, base, contraction, noneRisk, rs, false),
+
+                "NONE"
 
             );
 
         }
 
+        // —— Consolidation: compressed base, waiting for breakout ——
         if (!base.triggered) {
+
+            const coilNote = contraction.contracting
+
+                ? `ATR coil ${contraction.ratio.toFixed(2)}×`
+
+                : "no ATR coil yet";
+
+            const watchRisk: RiskResult = {
+
+                valid: false,
+
+                // Surface levels to watch (not a live entry)
+                entry: base.baseHigh,
+
+                stop: base.baseLow,
+
+                target: 0,
+
+                riskReward: 0
+
+            };
+
+            // Encode human reason on base for scanner card
+            base.reason =
+                `Consolidation ${base.baseLow.toFixed(2)}–${base.baseHigh.toFixed(2)} ` +
+
+                `(${base.baseBars}d, ${base.compression.toFixed(2)}×ATR, ${coilNote}) — wait close > ${base.baseHigh.toFixed(2)}`;
 
             return pack(
 
                 "watching",
 
-                noneRisk,
+                watchRisk,
 
-                this.score(trend, base, contraction, noneRisk, rs, false)
+                this.score(trend, base, contraction, noneRisk, rs, false),
+
+                "CONSOLIDATION"
 
             );
 
@@ -237,13 +292,14 @@ export class SwingTightBasePlaybook {
 
                 risk,
 
-                this.score(trend, base, contraction, risk, rs, true)
+                this.score(trend, base, contraction, risk, rs, true),
+
+                "BREAKOUT"
 
             );
 
         }
 
-        // Breakout without coil → triggered only (not qualified)
         if (!contraction.contracting) {
 
             return pack(
@@ -252,7 +308,9 @@ export class SwingTightBasePlaybook {
 
                 risk,
 
-                this.score(trend, base, contraction, risk, rs, true)
+                this.score(trend, base, contraction, risk, rs, true),
+
+                "BREAKOUT"
 
             );
 
@@ -264,7 +322,9 @@ export class SwingTightBasePlaybook {
 
             risk,
 
-            this.score(trend, base, contraction, risk, rs, true)
+            this.score(trend, base, contraction, risk, rs, true),
+
+            "BREAKOUT"
 
         );
 
@@ -374,7 +434,7 @@ export class SwingTightBasePlaybook {
 
         this.traceEngine.add(
 
-            "Tight Base",
+            "Consolidation",
 
             result.base.hasBase,
 
@@ -420,7 +480,7 @@ export class SwingTightBasePlaybook {
 
                 ? "Close above base high"
 
-                : "No breakout yet"
+                : "No breakout yet — consolidation only"
 
         );
 
@@ -446,19 +506,23 @@ export class SwingTightBasePlaybook {
 
         this.traceEngine.addInfo(
 
-            "State",
+            "Phase",
 
-            result.state,
+            result.phase,
 
-            result.qualified
+            result.phase === "CONSOLIDATION"
 
-                ? "Qualified tight-base breakout (coiled)"
+                ? "In base — not an entry yet"
 
-                : result.base.triggered && !result.contraction.contracting
+                : result.qualified
 
-                    ? "Breakout without ATR coil — not qualified"
+                    ? "Qualified tight-base breakout (coiled)"
 
-                    : "Not qualified"
+                    : result.base.triggered && !result.contraction.contracting
+
+                        ? "Breakout without ATR coil — not qualified"
+
+                        : "Not qualified"
 
         );
 

@@ -60,7 +60,7 @@ export interface SwingCard {
     rsRank: number;
     rs: number;
     reason: string;
-    setupType?: "PULLBACK" | "TIGHT_BASE" | string;
+    setupType?: "PULLBACK" | "TIGHT_BASE" | "CONSOLIDATION" | string;
     triggerTime?: string;
     qualifiedAt?: string | null;
     confirmTf?: "30m" | null;

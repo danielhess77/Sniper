@@ -2,14 +2,13 @@
  * Sniper
  * Swing Scanner
  *
- * Version: 1.5
+ * Version: 1.6
  *
  * SHORT (1–3 day) horizon: daily structure + 30m entry confirm.
  * INTERMEDIATE (1–3 week): daily only.
  *
- * Board quality:
- * - qualified requires score ≥ 80 (else demoted to watching)
- * - journal path only sees qualified === true
+ * Tight base without breakout → setupType CONSOLIDATION (watching).
+ * Board quality: qualified requires score ≥ 80 (else demoted to watching).
  */
 
 import { BDKClient, Candle } from "./BDKClient.js";
@@ -51,7 +50,7 @@ export interface SwingCard {
 
     reason: string;
 
-    setupType: "PULLBACK" | "TIGHT_BASE";
+    setupType: "PULLBACK" | "TIGHT_BASE" | "CONSOLIDATION";
 
     /** Display: ET date of trigger bar */
     triggerTime: string;
@@ -292,7 +291,6 @@ export class SwingScanner {
 
         }
 
-        // 30m confirm only for SHORT names that daily structure liked
         const shortCandidates =
             cards.filter(
 
@@ -301,6 +299,7 @@ export class SwingScanner {
                     c.horizonId === "SHORT" &&
                     c.direction === "BULLISH" &&
                     c.entry > 0 &&
+                    c.setupType !== "CONSOLIDATION" &&
                     (c.qualified || c.state === "watching" || c.state === "triggered")
 
             );
@@ -322,7 +321,6 @@ export class SwingScanner {
 
                     try {
 
-                        // 5 sessions of 30-minute bars
                         const bars =
                             await this.bdk.getMinuteHistory(symbol, 5, "30");
 
@@ -343,6 +341,18 @@ export class SwingScanner {
         }
 
         for (const card of cards) {
+
+            if (card.setupType === "CONSOLIDATION") {
+
+                card.confirmTf = null;
+
+                card.confirmStatus = "n/a";
+
+                card.confirmReason = "Consolidation — wait for daily breakout";
+
+                continue;
+
+            }
 
             if (card.horizonId !== "SHORT") {
 
@@ -378,7 +388,6 @@ export class SwingScanner {
 
             card.confirmReason = conf.reason;
 
-            // Daily had a take → require 30m confirm to stay qualified
             if (card.qualified) {
 
                 if (conf.status === "confirmed") {
@@ -395,14 +404,12 @@ export class SwingScanner {
                     card.reason =
                         `Daily OK — ${conf.reason}`;
 
-                    // Soft score so it still ranks near top of watching
                     card.score = Math.max(40, card.score - 12);
 
                 }
 
             } else if (conf.status === "confirmed" && card.entry > 0) {
 
-                // Watching name already trading at entry on 30m — note it
                 card.reason =
                     `${card.reason} · 30m at entry (daily not full qualify)`;
 
@@ -410,7 +417,6 @@ export class SwingScanner {
 
         }
 
-        // —— Min score floor: weak "qualified" → watching (never journal) ——
         let demoted = 0;
 
         for (const card of cards) {
@@ -473,6 +479,7 @@ export class SwingScanner {
 
             }
 
+            // Prefer consolidations with tighter coil higher in watching list
             return b.score - a.score;
 
         });
@@ -481,9 +488,11 @@ export class SwingScanner {
 
         const w = cards.filter(c => c.state === "watching").length;
 
+        const coils = cards.filter(c => c.setupType === "CONSOLIDATION").length;
+
         console.log(
 
-            `Swing setups returned: ${cards.length} (qualified: ${q}, watching: ${w})`
+            `Swing setups returned: ${cards.length} (qualified: ${q}, watching: ${w}, consolidation: ${coils})`
 
         );
 
@@ -563,6 +572,9 @@ export class SwingScanner {
         const t =
             barTime(candles, result.base.triggerIndex);
 
+        const isCoil =
+            result.phase === "CONSOLIDATION";
+
         return {
 
             symbol,
@@ -593,9 +605,9 @@ export class SwingScanner {
 
             reason: result.base.reason,
 
-            setupType: "TIGHT_BASE",
+            setupType: isCoil ? "CONSOLIDATION" : "TIGHT_BASE",
 
-            triggerTime: t.display,
+            triggerTime: isCoil ? "—" : t.display,
 
             qualifiedAt: result.qualified ? t.iso : null,
 
